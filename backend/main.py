@@ -1,4 +1,4 @@
-from typing import Union
+import time
 import random
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,4 +28,5 @@ def read_random():
         "Stay curious; trends change fast.",
     ]
     selected = random.choice(sample_messages)
+    time.sleep(2)
     return {"message": selected}
