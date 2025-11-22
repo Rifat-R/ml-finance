@@ -11,23 +11,16 @@ type Prediction = {
   direction: 'up' | 'down'
   prob_up: number
   prob_down: number
+  ticker?: string
+  closes_used?: number[]
 }
-
-const DEFAULT_CLOSES =
-  '421.1, 422.4, 421.8, 423.6, 424.9, 426.2, 427.1, 428.5, 429.2, 430.4, 431.0'
-
-const parseCloses = (raw: string): number[] =>
-  raw
-    .split(/[\s,]+/)
-    .map((value) => Number.parseFloat(value))
-    .filter((value) => Number.isFinite(value))
 
 const formatProbability = (value: number) => `${(value * 100).toFixed(1)}%`
 
 function App() {
   const apiBase = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000'
 
-  const [closesInput, setClosesInput] = useState<string>(DEFAULT_CLOSES)
+  const [tickerInput, setTickerInput] = useState<string>('AAPL')
   const [info, setInfo] = useState<PredictorInfo | null>(null)
   const [infoError, setInfoError] = useState<string | null>(null)
   const [prediction, setPrediction] = useState<Prediction | null>(null)
@@ -58,22 +51,14 @@ function App() {
     fetchPredictorInfo()
   }, [])
 
-  const handlePredict = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
+  const requestPrediction = async (endpoint: string, payload: Record<string, unknown>) => {
     setPredictError(null)
-
-    const closes = parseCloses(closesInput)
-    if (closes.length < 11) {
-      setPredictError('Please provide at least 11 closing prices (oldest to newest).')
-      return
-    }
-
     setIsPredicting(true)
     try {
-      const response = await fetch(`${apiBase}/predict-direction`, {
+      const response = await fetch(`${apiBase}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ closes }),
+        body: JSON.stringify(payload),
       })
 
       if (!response.ok) {
@@ -92,48 +77,62 @@ function App() {
     }
   }
 
+  const handlePredictFromTicker = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+
+    const ticker = tickerInput.trim()
+    if (!ticker) {
+      setPredictError('Please enter a ticker symbol (e.g. AAPL).')
+      return
+    }
+
+    await requestPrediction('/predict-direction-from-ticker', { ticker })
+  }
+
   return (
     <div className="page">
       <header className="hero">
         <p className="eyebrow">LightGBM direction predictor</p>
-        <h1>Send a price window and get the model&apos;s bias</h1>
+        <h1>Directional Forecasting using Tree Model</h1>
         <p className="lede">
-          Paste at least 11 recent closing prices (oldest first). The backend builds returns/volatility features and
-          scores the next-day move for you.
+          We pull the latest daily closes with yfinance, build return/volatility features, and score the next-day move
+          for you.
         </p>
       </header>
 
       <div className="grid">
-        <form className="panel" onSubmit={handlePredict}>
+        <form className="panel" onSubmit={handlePredictFromTicker}>
           <div className="panel-head">
             <div>
               <p className="eyebrow subtle">Input</p>
-              <h2>Price window</h2>
+              <h2>Ticker lookup</h2>
             </div>
             <span className="badge">
               {isLoadingInfo ? 'Loading model…' : info ? `Trained on ${info.trained_on_ticker}` : 'Model info unavailable'}
             </span>
           </div>
 
-          <label className="label" htmlFor="closes">
-            Recent closes
+          <label className="label" htmlFor="ticker">
+            Ticker (we&apos;ll fetch latest closes)
           </label>
-          <textarea
-            id="closes"
-            value={closesInput}
-            onChange={(event) => setClosesInput(event.target.value)}
-            placeholder="112.5, 112.9, 113.4, 114.1, 113.8, 114.6, 115.2, 115.5, 116.1, 116.9, 117.4"
-          />
-          <p className="help">Comma, space, or newline separated. Minimum of 11 values.</p>
+          <div className="ticker-row">
+            <div className="ticker-inputs">
+              <input
+                id="ticker"
+                value={tickerInput}
+                onChange={(event) => setTickerInput(event.target.value)}
+                placeholder="MSFT"
+                className="text-input"
+              />
+              <p className="help">Uses the most recent daily closes (default 30-day window) via yfinance.</p>
+            </div>
+          </div>
 
           {predictError && <div className="alert">{predictError}</div>}
 
           <div className="actions">
             <button type="submit" disabled={isPredicting}>
               {isPredicting ? 'Scoring…' : 'Predict direction'}
-            </button>
-            <button type="button" className="ghost" onClick={() => setClosesInput(DEFAULT_CLOSES)}>
-              Use sample window
             </button>
           </div>
         </form>
@@ -154,6 +153,11 @@ function App() {
               <p className="direction">
                 Likely <strong>{prediction.direction.toUpperCase()}</strong>
               </p>
+              {prediction.ticker && (
+                <p className="muted">
+                  Source: {prediction.ticker} ({prediction.closes_used ? `${prediction.closes_used.length} closes` : 'latest closes'})
+                </p>
+              )}
               <div className="prob-row">
                 <span className="muted">Up</span>
                 <div className="bar">

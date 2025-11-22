@@ -81,6 +81,27 @@
   margin: 0 0 0.5rem;
 }
 
+.label.subtle {
+  font-weight: 500;
+  color: #cbd5e1;
+}
+
+input.text-input {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+  color: #e2e8f0;
+  padding: 0.7rem 1rem;
+  font-size: 1rem;
+  font-family: inherit;
+}
+
+input.text-input:focus {
+  outline: 2px solid #38bdf8;
+  border-color: #38bdf8;
+}
+
 textarea {
   width: 100%;
   border-radius: 12px;
@@ -141,6 +162,19 @@ button.ghost {
   background: transparent;
   color: #e2e8f0;
   border-color: rgba(255, 255, 255, 0.2);
+}
+
+.ticker-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-end;
+  margin-bottom: 0.85rem;
+}
+
+.ticker-inputs {
+  flex: 1;
+  min-width: 200px;
 }
 
 .alert {
