@@ -1,14 +1,19 @@
+import os
 import joblib
 import numpy as np
 import pandas as pd
 import yfinance as yf
 from fastapi import APIRouter, HTTPException
+from lightgbm import LGBMClassifier
 from pydantic import BaseModel, Field
+
+from ..train_lgbm_direction import create_features, download_data
 
 # Create the router
 router = APIRouter()
 
 MODEL_PATH = "lgbm_direction.pkl"
+MODEL_DIR = "models"
 
 try:
     artifact = joblib.load(MODEL_PATH)
@@ -17,6 +22,11 @@ try:
     trained_ticker = artifact["ticker"]
 except Exception as e:
     raise RuntimeError(f"Could not load model '{MODEL_PATH}'. Error: {e}")
+
+# Cache models per ticker to avoid retraining on every request
+model_cache: dict[str, dict[str, object]] = {
+    str(trained_ticker).upper(): {"model": model, "feature_cols": feature_cols}
+}
 
 
 class TickerRequest(BaseModel):
@@ -44,7 +54,7 @@ class PredictionWithCloses(PredictionResponse):
     closes_used: list[float]
 
 
-def build_features_from_closes(closes: list[float]) -> np.ndarray:
+def build_features_from_closes(closes: list[float], feature_cols: list[str]) -> np.ndarray:
     """
     Convert a sequence of close prices into feature vector:
     ret_1, ret_3, ret_5, ret_10, vol_10
@@ -78,13 +88,13 @@ def build_features_from_closes(closes: list[float]) -> np.ndarray:
     return x
 
 
-def _predict_from_features(closes: list[float]) -> PredictionResponse:
+def _predict_from_features(closes: list[float], model_obj, feature_cols: list[str]) -> PredictionResponse:
     try:
-        X = build_features_from_closes(closes)
+        X = build_features_from_closes(closes, feature_cols)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    proba = model.predict_proba(X)[0]
+    proba = model_obj.predict_proba(X)[0]
 
     prob_down = float(proba[0])
     prob_up = float(proba[1])
@@ -127,6 +137,68 @@ def fetch_latest_closes(ticker: str, window: int) -> list[float]:
     return closes[-window:]
 
 
+def train_model_for_ticker(ticker: str) -> dict[str, object]:
+    """
+    Train a new LightGBM model for the given ticker using the same pipeline as the training script.
+    """
+    raw = download_data(ticker)
+    df = create_features(raw)
+
+    feature_cols_local = ["ret_1", "ret_3", "ret_5", "ret_10", "vol_10"]
+    missing = [c for c in feature_cols_local if c not in df.columns]
+    if missing:
+        raise HTTPException(status_code=500, detail=f"Training failed: missing features {missing}")
+
+    X = df.loc[:, feature_cols_local].copy()
+    y = df["target"].copy()
+
+    split = int(len(df) * 0.8)
+    X_train, X_test = X.iloc[:split], X.iloc[split:]
+    y_train, y_test = y.iloc[:split], y.iloc[split:]
+
+    model_obj = LGBMClassifier(
+        n_estimators=200,
+        learning_rate=0.05,
+        max_depth=-1,
+        random_state=42,
+    )
+    model_obj.fit(X_train, y_train)
+
+    artifact_local = {
+        "model": model_obj,
+        "feature_cols": feature_cols_local,
+        "ticker": ticker,
+    }
+
+    os.makedirs(MODEL_DIR, exist_ok=True)
+    model_path = os.path.join(MODEL_DIR, f"lgbm_direction_{ticker.upper()}.pkl")
+    joblib.dump(artifact_local, model_path)
+
+    return artifact_local
+
+
+def load_or_train_model(ticker: str) -> dict[str, object]:
+    key = ticker.upper()
+
+    cached = model_cache.get(key)
+    if cached:
+        return cached
+
+    disk_path = os.path.join(MODEL_DIR, f"lgbm_direction_{key}.pkl")
+    if os.path.exists(disk_path):
+        try:
+            artifact_local = joblib.load(disk_path)
+            model_cache[key] = {"model": artifact_local["model"], "feature_cols": artifact_local["feature_cols"]}
+            return model_cache[key]
+        except Exception:
+            # Fall back to retraining if loading fails
+            pass
+
+    artifact_local = train_model_for_ticker(ticker)
+    model_cache[key] = {"model": artifact_local["model"], "feature_cols": artifact_local["feature_cols"]}
+    return model_cache[key]
+
+
 @router.get("/predict-info")
 def predict_info():
     return {
@@ -141,7 +213,8 @@ def predict_direction_from_ticker(request: TickerRequest):
     Fetch the latest closes for a ticker with yfinance and run the predictor.
     """
     closes = fetch_latest_closes(request.ticker, window=request.window)
-    base_prediction = _predict_from_features(closes)
+    model_entry = load_or_train_model(request.ticker)
+    base_prediction = _predict_from_features(closes, model_entry["model"], model_entry["feature_cols"])
 
     return PredictionWithCloses(
         ticker=request.ticker.upper(),

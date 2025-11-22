@@ -100,6 +100,12 @@ function App() {
         </p>
       </header>
 
+      {prediction && (
+        <p className="muted" style={{ marginBottom: '0.75rem' }}>
+          Trained on demand for <strong>{prediction.ticker}</strong>; cached for future calls.
+        </p>
+      )}
+
       <div className="grid">
         <form className="panel" onSubmit={handlePredictFromTicker}>
           <div className="panel-head">
@@ -108,7 +114,13 @@ function App() {
               <h2>Ticker lookup</h2>
             </div>
             <span className="badge">
-              {isLoadingInfo ? 'Loading model…' : info ? `Trained on ${info.trained_on_ticker}` : 'Model info unavailable'}
+              {prediction?.ticker
+                ? `Model for ${prediction.ticker}`
+                : isLoadingInfo
+                  ? 'Loading model…'
+                  : info
+                    ? `Starter: ${info.trained_on_ticker}`
+                    : 'Model info unavailable'}
             </span>
           </div>
 
