@@ -17,6 +17,41 @@ type Prediction = {
 
 const formatProbability = (value: number) => `${(value * 100).toFixed(1)}%`
 
+type ProgressBarProps = {
+  label: string
+  value: number
+  gradient: string
+  delay?: number
+}
+
+const clamp01 = (value: number) => Math.min(1, Math.max(0, value))
+
+const ProgressBar = ({ label, value, gradient, delay = 0 }: ProgressBarProps) => {
+  const [displayValue, setDisplayValue] = useState(0)
+
+  useEffect(() => {
+    // Reset to zero before animating to the new value, so each prediction slides in.
+    setDisplayValue(0)
+    const timeout = window.setTimeout(() => setDisplayValue(value), delay)
+    return () => window.clearTimeout(timeout)
+  }, [value, delay])
+
+  const widthPct = Math.round(clamp01(displayValue) * 100)
+
+  return (
+    <div className="flex items-center gap-3 text-sm text-slate-300">
+      <span className="w-12 text-slate-400">{label}</span>
+      <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-800">
+        <div
+          className={`h-full rounded-full ${gradient} transition-all duration-700 ease-out`}
+          style={{ width: `${widthPct}%` }}
+        />
+      </div>
+      <span className="w-16 text-right font-semibold text-slate-100">{formatProbability(value)}</span>
+    </div>
+  )
+}
+
 function App() {
   const apiBase = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000'
 
@@ -190,27 +225,9 @@ function App() {
                   </p>
                 )}
                 <div className="space-y-2">
-                  <div className="flex items-center gap-3 text-sm text-slate-300">
-                    <span className="w-12 text-slate-400">Up</span>
-                    <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-800">
-                      <div className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-emerald-500" style={{ width: `${Math.round(prediction.prob_up * 100)}%` }} />
-                    </div>
-                    <span className="w-16 text-right font-semibold text-slate-100">{formatProbability(prediction.prob_up)}</span>
-                  </div>
-                  <div className="flex items-center gap-3 text-sm text-slate-300">
-                    <span className="w-12 text-slate-400">Down</span>
-                    <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-800">
-                      <div className="h-full rounded-full bg-gradient-to-r from-amber-400 to-rose-500" style={{ width: `${Math.round(prediction.prob_down * 100)}%` }} />
-                    </div>
-                    <span className="w-16 text-right font-semibold text-slate-100">{formatProbability(prediction.prob_down)}</span>
-                  </div>
-                  <div className="flex items-center gap-3 text-sm text-slate-300">
-                    <span className="w-12 text-slate-400">Acc</span>
-                    <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-800">
-                      <div className="h-full rounded-full bg-gradient-to-r from-amber-400 to-cyan-600" style={{ width: `${Math.round(prediction.accuracy * 100)}%` }} />
-                    </div>
-                    <span className="w-16 text-right font-semibold text-slate-100">{formatProbability(prediction.accuracy)}</span>
-                  </div>
+                  <ProgressBar label="Up" value={prediction.prob_up} gradient="bg-gradient-to-r from-emerald-400 to-emerald-500" />
+                  <ProgressBar label="Down" value={prediction.prob_down} gradient="bg-gradient-to-r from-amber-400 to-rose-500" delay={60} />
+                  <ProgressBar label="Acc" value={prediction.accuracy} gradient="bg-gradient-to-r from-amber-400 to-cyan-600" delay={120} />
                 </div>
               </div>
             )}
