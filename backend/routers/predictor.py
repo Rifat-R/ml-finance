@@ -9,7 +9,6 @@ from pydantic import BaseModel, Field
 
 from ..train_lgbm_direction import create_features, download_data
 
-# Create the router
 router = APIRouter()
 
 MODEL_DIR = "models"
@@ -48,15 +47,15 @@ def build_features_from_closes(
     closes: list[float], feature_cols: list[str]
 ) -> np.ndarray:
     """
-    Convert a sequence of close prices into feature vector:
-    ret_1, ret_3, ret_5, ret_10, vol_10
+    Converting a sequence of close prices -> Percentage return for
+    each day -> build features.
     """
     closes_arr = np.array(closes, dtype=float)
 
     if len(closes_arr) < 11:
         raise ValueError("Need at least 11 closing prices for feature extraction.")
 
-    # Returns
+    # Computing the percentage return for each day
     returns = closes_arr[1:] / closes_arr[:-1] - 1.0
     s = pd.Series(returns)
 
@@ -158,6 +157,7 @@ def train_model_for_ticker(ticker: str) -> dict[str, object]:
     X_train, X_test = X.iloc[:split], X.iloc[split:]
     y_train, y_test = y.iloc[:split], y.iloc[split:]
 
+    # Using 200 trees and a lower learning rate for better generalization
     model_obj = LGBMClassifier(
         n_estimators=200,
         learning_rate=0.05,

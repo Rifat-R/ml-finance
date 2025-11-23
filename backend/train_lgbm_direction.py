@@ -35,6 +35,10 @@ def download_data(
 
 
 def create_features(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Generates features for EVERY closeday in the DataFrame
+    """
+
     df = df.copy()
 
     # Ensure we have a 'Close' column (from yfinance, after cleaning it's usually "Close")
@@ -55,6 +59,7 @@ def create_features(df: pd.DataFrame) -> pd.DataFrame:
 
     # Simple features from past returns
     df["ret_1"] = df["return"]
+    # Basically sliding window averages
     df["ret_3"] = df["return"].rolling(3).mean()
     df["ret_5"] = df["return"].rolling(5).mean()
     df["ret_10"] = df["return"].rolling(10).mean()
