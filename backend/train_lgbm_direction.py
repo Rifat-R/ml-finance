@@ -1,10 +1,3 @@
-"""
-Toy example: train a LightGBM model to predict next-day direction (up/down)
-based on simple return features.
-
-This is JUST for educational purposes, not a trading edge.
-"""
-
 import re
 from typing import Optional
 
@@ -43,7 +36,6 @@ def create_features(df: pd.DataFrame) -> pd.DataFrame:
 
     # Ensure we have a 'Close' column (from yfinance, after cleaning it's usually "Close")
     if "Close" not in df.columns:
-        # Sometimes Adj_Close is more reliable; adapt if needed
         # Try a few common variants
         candidates = [c for c in df.columns if "Close" in c]
         if not candidates:
@@ -65,13 +57,12 @@ def create_features(df: pd.DataFrame) -> pd.DataFrame:
     df["ret_10"] = df["return"].rolling(10).mean()
     df["vol_10"] = df["return"].rolling(10).std()
 
-    # Target: 1 if next day's return is positive, else 0
+    # 1 if next day's return is positive, else 0
     df["target"] = (df["return"].shift(-1) > 0).astype(int)
 
     # Drop rows with NaNs (from rolling and shifting)
     df = df.dropna()
 
-    # Keep only the columns we care about for modeling
     cols = ["ret_1", "ret_3", "ret_5", "ret_10", "vol_10", "target"]
     df = df[cols].copy()  # type: ignore
 

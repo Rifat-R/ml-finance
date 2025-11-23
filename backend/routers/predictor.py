@@ -15,7 +15,6 @@ router = APIRouter()
 MODEL_DIR = "models"
 FEATURE_COLS = ["ret_1", "ret_3", "ret_5", "ret_10", "vol_10"]
 
-# Cache models per ticker to avoid retraining on every request
 model_cache: dict[str, dict[str, object]] = {}
 
 
@@ -244,7 +243,9 @@ def ticker_info(ticker: str):
         t = yf.Ticker(symbol)
         info = t.get_info()
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Failed to fetch info for '{symbol}': {exc}") from exc
+        raise HTTPException(
+            status_code=502, detail=f"Failed to fetch info for '{symbol}': {exc}"
+        ) from exc
 
     if not info:
         raise HTTPException(status_code=404, detail=f"No info found for '{symbol}'.")
