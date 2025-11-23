@@ -12,6 +12,7 @@ type Prediction = {
   prob_down: number
   ticker?: string
   closes_used?: number[]
+  accuracy: number
 }
 
 const formatProbability = (value: number) => `${(value * 100).toFixed(1)}%`
@@ -167,8 +168,8 @@ function App() {
               {prediction && (
                 <span
                   className={`inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold ${prediction.direction === 'up'
-                      ? 'border border-emerald-300/60 bg-emerald-400/15 text-emerald-200'
-                      : 'border border-amber-300/60 bg-amber-400/15 text-amber-200'
+                    ? 'border border-emerald-300/60 bg-emerald-400/15 text-emerald-200'
+                    : 'border border-amber-300/60 bg-amber-400/15 text-amber-200'
                     }`}
                 >
                   {prediction.direction} bias
@@ -202,6 +203,13 @@ function App() {
                       <div className="h-full rounded-full bg-gradient-to-r from-amber-400 to-rose-500" style={{ width: `${Math.round(prediction.prob_down * 100)}%` }} />
                     </div>
                     <span className="w-16 text-right font-semibold text-slate-100">{formatProbability(prediction.prob_down)}</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-sm text-slate-300">
+                    <span className="w-12 text-slate-400">Acc</span>
+                    <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-800">
+                      <div className="h-full rounded-full bg-gradient-to-r from-amber-400 to-cyan-600" style={{ width: `${Math.round(prediction.accuracy * 100)}%` }} />
+                    </div>
+                    <span className="w-16 text-right font-semibold text-slate-100">{formatProbability(prediction.accuracy)}</span>
                   </div>
                 </div>
               </div>

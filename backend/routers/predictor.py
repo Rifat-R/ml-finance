@@ -6,6 +6,7 @@ import yfinance as yf
 from fastapi import APIRouter, HTTPException
 from lightgbm import LGBMClassifier
 from pydantic import BaseModel, Field
+from sklearn.metrics import accuracy_score
 
 from ..train_lgbm_direction import create_features, download_data
 
@@ -36,6 +37,7 @@ class PredictionResponse(BaseModel):
     direction: str  # "up" or "down"
     prob_up: float
     prob_down: float
+    accuracy: float | None = None
 
 
 class PredictionWithCloses(PredictionResponse):
@@ -165,11 +167,14 @@ def train_model_for_ticker(ticker: str) -> dict[str, object]:
         random_state=42,
     )
     model_obj.fit(X_train, y_train)
+    y_pred = model_obj.predict(X_test)
+    acc = accuracy_score(y_test, y_pred)
 
     artifact_local = {
         "model": model_obj,
         "feature_cols": FEATURE_COLS,
         "ticker": ticker,
+        "accuracy": acc,
     }
 
     os.makedirs(MODEL_DIR, exist_ok=True)
@@ -193,6 +198,7 @@ def load_or_train_model(ticker: str) -> dict[str, object]:
             model_cache[key] = {
                 "model": artifact_local["model"],
                 "feature_cols": artifact_local["feature_cols"],
+                "accuracy": artifact_local["accuracy"],
             }
             return model_cache[key]
         except Exception:
@@ -203,6 +209,7 @@ def load_or_train_model(ticker: str) -> dict[str, object]:
     model_cache[key] = {
         "model": artifact_local["model"],
         "feature_cols": artifact_local["feature_cols"],
+        "accuracy": artifact_local["accuracy"],
     }
     return model_cache[key]
 
@@ -225,6 +232,9 @@ def predict_direction_from_ticker(request: TickerRequest):
     base_prediction = _predict_from_features(
         closes, model_entry["model"], model_entry["feature_cols"]  # type: ignore
     )
+
+    base_prediction.accuracy = model_entry.get("accuracy", 0.0)  # type: ignore
+    print(f"ACCURACY FROM PREDICT DIRECTION FROM TICKER: {model_entry.get('accuracy')}")
 
     return PredictionWithCloses(
         ticker=request.ticker.upper(),
