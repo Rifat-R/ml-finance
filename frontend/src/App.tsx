@@ -15,6 +15,15 @@ type Prediction = {
   accuracy: number
 }
 
+type TickerInfo = {
+  ticker: string
+  name: string | null
+  sector: string | null
+  country: string | null
+  website: string | null
+  summary: string | null
+}
+
 const formatProbability = (value: number) => `${(value * 100).toFixed(1)}%`
 
 type ProgressBarProps = {
@@ -62,6 +71,9 @@ function App() {
   const [predictError, setPredictError] = useState<string | null>(null)
   const [isPredicting, setIsPredicting] = useState<boolean>(false)
   const [isLoadingInfo, setIsLoadingInfo] = useState<boolean>(false)
+  const [tickerInfo, setTickerInfo] = useState<TickerInfo | null>(null)
+  const [tickerInfoError, setTickerInfoError] = useState<string | null>(null)
+  const [isLoadingTickerInfo, setIsLoadingTickerInfo] = useState<boolean>(false)
 
   const fetchPredictorInfo = async () => {
     setIsLoadingInfo(true)
@@ -86,6 +98,27 @@ function App() {
     fetchPredictorInfo()
   }, [])
 
+  const fetchTickerInfo = async (symbol: string) => {
+    setTickerInfo(null)
+    setTickerInfoError(null)
+    setIsLoadingTickerInfo(true)
+    try {
+      const response = await fetch(`${apiBase}/ticker-info?ticker=${encodeURIComponent(symbol)}`)
+      if (!response.ok) {
+        const detail = await response.json().catch(() => ({}))
+        const message = typeof detail.detail === 'string' ? detail.detail : `Backend responded with ${response.status}`
+        throw new Error(message)
+      }
+      const data: TickerInfo = await response.json()
+      setTickerInfo(data)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not load ticker info'
+      setTickerInfoError(message)
+    } finally {
+      setIsLoadingTickerInfo(false)
+    }
+  }
+
   const requestPrediction = async (endpoint: string, payload: Record<string, unknown>) => {
     setPredictError(null)
     setIsPredicting(true)
@@ -104,6 +137,9 @@ function App() {
 
       const data: Prediction = await response.json()
       setPrediction(data)
+      if (data.ticker) {
+        fetchTickerInfo(data.ticker)
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Prediction request failed'
       setPredictError(message)
@@ -255,6 +291,48 @@ function App() {
                     </li>
                   ))}
                 </ul>
+              )}
+            </div>
+
+            <div className="mt-5 border-t border-slate-800 pt-4">
+              <h3 className="text-base font-semibold text-slate-100">Ticker info</h3>
+              {tickerInfoError && (
+                <div className="mt-2 rounded-lg border border-rose-400/60 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">
+                  {tickerInfoError}
+                </div>
+              )}
+              {isLoadingTickerInfo && <p className="text-sm text-slate-400">Fetching company details…</p>}
+              {!isLoadingTickerInfo && tickerInfo && (
+                <div className="mt-3 space-y-2 text-sm text-slate-200">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-xs uppercase tracking-[0.18em] text-slate-400">Name</span>
+                    <span className="font-semibold text-slate-50">{tickerInfo.name ?? '—'}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <span className="text-xs uppercase tracking-[0.18em] text-slate-400">Sector</span>
+                      <p className="text-slate-200">{tickerInfo.sector ?? '—'}</p>
+                    </div>
+                    <div>
+                      <span className="text-xs uppercase tracking-[0.18em] text-slate-400">Country</span>
+                      <p className="text-slate-200">{tickerInfo.country ?? '—'}</p>
+                    </div>
+                  </div>
+                  {tickerInfo.website && (
+                    <a
+                      className="inline-flex items-center gap-2 text-cyan-300 hover:text-cyan-200"
+                      href={tickerInfo.website}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Visit website ↗
+                    </a>
+                  )}
+                  <div>
+                    <span className="text-xs uppercase tracking-[0.18em] text-slate-400">Summary</span>
+                    <p className="mt-1 text-slate-300">{tickerInfo.summary ?? 'No description available.'}</p>
+                  </div>
+                </div>
               )}
             </div>
           </section>

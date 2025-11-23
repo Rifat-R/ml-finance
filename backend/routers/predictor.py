@@ -45,6 +45,15 @@ class PredictionWithCloses(PredictionResponse):
     closes_used: list[float]
 
 
+class TickerInfoResponse(BaseModel):
+    ticker: str
+    name: str | None = None
+    sector: str | None = None
+    country: str | None = None
+    website: str | None = None
+    summary: str | None = None
+
+
 def build_features_from_closes(
     closes: list[float], feature_cols: list[str]
 ) -> np.ndarray:
@@ -220,6 +229,34 @@ def predict_info():
         "features_expected": FEATURE_COLS,
         "cached_models": list(model_cache.keys()),
     }
+
+
+@router.get("/ticker-info", response_model=TickerInfoResponse)
+def ticker_info(ticker: str):
+    """
+    Lightweight ticker metadata using yfinance. Returns best-effort fields and tolerates missing keys.
+    """
+    if not ticker or not ticker.strip():
+        raise HTTPException(status_code=400, detail="Ticker symbol is required.")
+
+    symbol = ticker.strip()
+    try:
+        t = yf.Ticker(symbol)
+        info = t.get_info()
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Failed to fetch info for '{symbol}': {exc}") from exc
+
+    if not info:
+        raise HTTPException(status_code=404, detail=f"No info found for '{symbol}'.")
+
+    return TickerInfoResponse(
+        ticker=symbol.upper(),
+        name=info.get("shortName") or info.get("longName"),
+        sector=info.get("sector"),
+        country=info.get("country"),
+        website=info.get("website"),
+        summary=info.get("longBusinessSummary"),
+    )
 
 
 @router.post("/predict-direction-from-ticker", response_model=PredictionWithCloses)
