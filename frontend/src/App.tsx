@@ -1,6 +1,5 @@
-import { FormEvent, useEffect, useState } from 'react'
-import './App.css'
-import './Output.css'
+import type { FormEvent } from 'react'
+import { useEffect, useState } from 'react'
 
 type PredictorInfo = {
   features_expected: string[]
@@ -90,120 +89,148 @@ function App() {
   }
 
   return (
-    <div className="page">
-      <header className="hero">
-        <p className="eyebrow">LightGBM direction predictor</p>
-        <h1>Directional Forecasting using Tree Model</h1>
-        <p className="lede">
-          We pull the latest daily closes with yfinance, build return/volatility features, and score the next-day move
-          for you.
-        </p>
-      </header>
+    <div className="min-h-screen bg-slate-950 text-slate-100">
+      <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-10">
+        <header className="space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">LightGBM direction predictor</p>
+          <h1 className="text-3xl font-bold leading-tight md:text-4xl">Directional Forecasting using Tree Model</h1>
+          <p className="max-w-3xl text-slate-400">
+            We pull the latest daily closes with yfinance, build return/volatility features, and score the next-day move
+            for you.
+          </p>
+          {prediction && (
+            <p className="text-sm text-slate-400">
+              Trained on demand for <span className="font-semibold text-cyan-300">{prediction.ticker}</span>; cached for
+              future calls.
+            </p>
+          )}
+        </header>
 
-      {prediction && (
-        <p className="muted" style={{ marginBottom: '0.75rem' }}>
-          Trained on demand for <strong>{prediction.ticker}</strong>; cached for future calls.
-        </p>
-      )}
-
-      <div className="grid">
-        <form className="panel" onSubmit={handlePredictFromTicker}>
-          <div className="panel-head">
-            <div>
-              <p className="eyebrow subtle">Input</p>
-              <h2>Ticker lookup</h2>
+        <div className="grid gap-4 md:grid-cols-2 md:gap-6">
+          <form
+            className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 shadow-lg shadow-cyan-500/5 backdrop-blur"
+            onSubmit={handlePredictFromTicker}
+          >
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Input</p>
+                <h2 className="text-xl font-semibold text-slate-50">Ticker lookup</h2>
+              </div>
+              <span className="inline-flex items-center rounded-full border border-cyan-300/60 bg-cyan-400/10 px-3 py-1 text-sm font-semibold text-cyan-200">
+                {prediction?.ticker
+                  ? `Model for ${prediction.ticker}`
+                  : isLoadingInfo
+                    ? 'Loading model…'
+                    : info?.cached_models?.length
+                      ? `Cached: ${info.cached_models.length}`
+                      : 'No cached models'}
+              </span>
             </div>
-            <span className="badge">
-              {prediction?.ticker
-                ? `Model for ${prediction.ticker}`
-                : isLoadingInfo
-                  ? 'Loading model…'
-                  : info?.cached_models?.length
-                    ? `Cached: ${info.cached_models.length} ticker(s)`
-                    : 'No cached models yet'}
-            </span>
-          </div>
 
-          <label className="label" htmlFor="ticker">
-            Ticker (we&apos;ll fetch latest closes)
-          </label>
-          <div className="ticker-row">
-            <div className="ticker-inputs">
+            <label className="mb-2 block text-sm font-semibold text-slate-200" htmlFor="ticker">
+              Ticker (we&apos;ll fetch latest closes)
+            </label>
+            <div className="space-y-2">
               <input
                 id="ticker"
                 value={tickerInput}
                 onChange={(event) => setTickerInput(event.target.value)}
                 placeholder="MSFT"
-                className="text-input"
+                className="w-full rounded-lg border border-slate-800 bg-slate-900/80 px-3 py-3 text-base text-slate-100 shadow-inner shadow-black/20 outline-none ring-1 ring-transparent transition focus:border-cyan-400/70 focus:ring-cyan-400/40"
               />
-              <p className="help">Uses the most recent daily closes (default 30-day window) via yfinance.</p>
+              <p className="text-sm text-slate-400">Uses the most recent daily closes (default 30-day window) via yfinance.</p>
             </div>
-          </div>
 
-          {predictError && <div className="alert">{predictError}</div>}
-
-          <div className="actions">
-            <button type="submit" disabled={isPredicting}>
-              {isPredicting ? 'Scoring…' : 'Predict direction'}
-            </button>
-          </div>
-        </form>
-
-        <section className="panel">
-          <div className="panel-head">
-            <div>
-              <p className="eyebrow subtle">Result</p>
-              <h2>Prediction</h2>
-            </div>
-            {prediction && <span className={`chip ${prediction.direction}`}>{prediction.direction} bias</span>}
-          </div>
-
-          {isPredicting && <p className="muted">Scoring your window against the model…</p>}
-
-          {!isPredicting && prediction && (
-            <div className="result">
-              <p className="direction">
-                Likely <strong>{prediction.direction.toUpperCase()}</strong>
-              </p>
-              {prediction.ticker && (
-                <p className="muted">
-                  Source: {prediction.ticker} ({prediction.closes_used ? `${prediction.closes_used.length} closes` : 'latest closes'})
-                </p>
-              )}
-              <div className="prob-row">
-                <span className="muted">Up</span>
-                <div className="bar">
-                  <div className="fill up" style={{ width: `${Math.round(prediction.prob_up * 100)}%` }} />
-                </div>
-                <span className="value">{formatProbability(prediction.prob_up)}</span>
+            {predictError && (
+              <div className="mt-4 rounded-lg border border-rose-400/60 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">
+                {predictError}
               </div>
-              <div className="prob-row">
-                <span className="muted">Down</span>
-                <div className="bar">
-                  <div className="fill down" style={{ width: `${Math.round(prediction.prob_down * 100)}%` }} />
-                </div>
-                <span className="value">{formatProbability(prediction.prob_down)}</span>
-              </div>
-            </div>
-          )}
-
-          {!isPredicting && !prediction && <p className="muted">Send some closes to see the model&apos;s probabilities.</p>}
-
-          <div className="info">
-            <h3>Model inputs</h3>
-            {infoError && <div className="alert">{infoError}</div>}
-            {isLoadingInfo && <p className="muted">Loading predictor metadata…</p>}
-            {info && (
-              <ul className="chips">
-                {info.features_expected.map((feature) => (
-                  <li key={feature} className="chip neutral">
-                    {feature}
-                  </li>
-                ))}
-              </ul>
             )}
-          </div>
-        </section>
+
+            <div className="mt-5 flex flex-wrap items-center gap-3">
+              <button
+                type="submit"
+                disabled={isPredicting}
+                className="inline-flex cursor-pointer items-center justify-center rounded-lg bg-gradient-to-r from-cyan-400 to-sky-500 px-4 py-2.5 text-sm font-semibold text-slate-950 shadow-lg shadow-cyan-500/30 transition hover:translate-y-[-1px] hover:shadow-cyan-400/40 disabled:translate-y-0 disabled:opacity-70 disabled:shadow-none"
+              >
+                {isPredicting ? 'Scoring…' : 'Predict direction'}
+              </button>
+            </div>
+          </form>
+
+          <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 shadow-lg shadow-cyan-500/5 backdrop-blur">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Result</p>
+                <h2 className="text-xl font-semibold text-slate-50">Prediction</h2>
+              </div>
+              {prediction && (
+                <span
+                  className={`inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold ${prediction.direction === 'up'
+                      ? 'border border-emerald-300/60 bg-emerald-400/15 text-emerald-200'
+                      : 'border border-amber-300/60 bg-amber-400/15 text-amber-200'
+                    }`}
+                >
+                  {prediction.direction} bias
+                </span>
+              )}
+            </div>
+
+            {isPredicting && <p className="text-sm text-slate-400">Scoring your window against the model…</p>}
+
+            {!isPredicting && prediction && (
+              <div className="space-y-3">
+                <p className="text-lg font-semibold text-slate-50">
+                  Likely <span className="tracking-wide text-slate-100">{prediction.direction.toUpperCase()}</span>
+                </p>
+                {prediction.ticker && (
+                  <p className="text-sm text-slate-400">
+                    Source: {prediction.ticker} ({prediction.closes_used ? `${prediction.closes_used.length} closes` : 'latest closes'})
+                  </p>
+                )}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-3 text-sm text-slate-300">
+                    <span className="w-12 text-slate-400">Up</span>
+                    <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-800">
+                      <div className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-emerald-500" style={{ width: `${Math.round(prediction.prob_up * 100)}%` }} />
+                    </div>
+                    <span className="w-16 text-right font-semibold text-slate-100">{formatProbability(prediction.prob_up)}</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-sm text-slate-300">
+                    <span className="w-12 text-slate-400">Down</span>
+                    <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-800">
+                      <div className="h-full rounded-full bg-gradient-to-r from-amber-400 to-rose-500" style={{ width: `${Math.round(prediction.prob_down * 100)}%` }} />
+                    </div>
+                    <span className="w-16 text-right font-semibold text-slate-100">{formatProbability(prediction.prob_down)}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {!isPredicting && !prediction && (
+              <p className="text-sm text-slate-400">Submit a ticker to see the model&apos;s probabilities.</p>
+            )}
+
+            <div className="mt-6 border-t border-slate-800 pt-4">
+              <h3 className="text-base font-semibold text-slate-100">Model inputs</h3>
+              {infoError && (
+                <div className="mt-2 rounded-lg border border-rose-400/60 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">
+                  {infoError}
+                </div>
+              )}
+              {isLoadingInfo && <p className="text-sm text-slate-400">Loading predictor metadata…</p>}
+              {info && (
+                <ul className="mt-3 flex flex-wrap gap-2">
+                  {info.features_expected.map((feature) => (
+                    <li key={feature} className="rounded-full border border-slate-800 bg-slate-800/60 px-3 py-1 text-sm font-semibold text-slate-200">
+                      {feature}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </section>
+        </div>
       </div>
     </div>
   )
