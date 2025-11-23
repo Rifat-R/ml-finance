@@ -89,8 +89,8 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-10">
+    <div className="min-h-screen text-slate-100">
+      <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-12">
         <header className="space-y-2">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">LightGBM direction predictor</p>
           <h1 className="text-3xl font-bold leading-tight md:text-4xl">Directional Forecasting using Tree Model</h1>
@@ -108,7 +108,7 @@ function App() {
 
         <div className="grid gap-4 md:grid-cols-2 md:gap-6">
           <form
-            className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 shadow-lg shadow-cyan-500/5 backdrop-blur"
+            className="rounded-2xl border border-white/10 bg-white/5 p-5 shadow-[0_20px_60px_rgba(0,0,0,0.3)] backdrop-blur"
             onSubmit={handlePredictFromTicker}
           >
             <div className="mb-4 flex items-center justify-between gap-3">
@@ -136,7 +136,7 @@ function App() {
                 value={tickerInput}
                 onChange={(event) => setTickerInput(event.target.value)}
                 placeholder="MSFT"
-                className="w-full rounded-lg border border-slate-800 bg-slate-900/80 px-3 py-3 text-base text-slate-100 shadow-inner shadow-black/20 outline-none ring-1 ring-transparent transition focus:border-cyan-400/70 focus:ring-cyan-400/40"
+                className="w-full rounded-lg border border-white/10 bg-white/10 px-3 py-3 text-base text-slate-100 shadow-inner shadow-black/20 outline-none ring-1 ring-transparent transition focus:border-cyan-400/70 focus:ring-cyan-400/40"
               />
               <p className="text-sm text-slate-400">Uses the most recent daily closes (default 30-day window) via yfinance.</p>
             </div>
@@ -158,7 +158,7 @@ function App() {
             </div>
           </form>
 
-          <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 shadow-lg shadow-cyan-500/5 backdrop-blur">
+          <section className="rounded-2xl border border-white/10 bg-white/5 p-5 shadow-[0_20px_60px_rgba(0,0,0,0.3)] backdrop-blur">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div>
                 <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Result</p>
@@ -222,7 +222,10 @@ function App() {
               {info && (
                 <ul className="mt-3 flex flex-wrap gap-2">
                   {info.features_expected.map((feature) => (
-                    <li key={feature} className="rounded-full border border-slate-800 bg-slate-800/60 px-3 py-1 text-sm font-semibold text-slate-200">
+                    <li
+                      key={feature}
+                      className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-sm font-semibold text-slate-100"
+                    >
                       {feature}
                     </li>
                   ))}

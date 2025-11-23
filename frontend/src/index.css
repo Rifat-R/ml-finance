@@ -1,5 +1,16 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
-body {
-  @apply bg-slate-950 text-slate-100;
+@layer base {
+  * {
+    @apply box-border;
+  }
+  body {
+    @apply m-0 min-h-screen bg-slate-950 text-slate-100 antialiased;
+    font-family: 'Space Grotesk', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background-image:
+      radial-gradient(circle at 15% 20%, rgba(56, 189, 248, 0.25), transparent 35%),
+      radial-gradient(circle at 85% 10%, rgba(244, 63, 94, 0.2), transparent 30%),
+      linear-gradient(135deg, #0a1224, #050b16 60%, #0a0f1d);
+  }
 }
