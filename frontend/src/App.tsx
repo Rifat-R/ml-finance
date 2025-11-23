@@ -3,8 +3,8 @@ import './App.css'
 import './Output.css'
 
 type PredictorInfo = {
-  trained_on_ticker: string
   features_expected: string[]
+  cached_models?: string[]
 }
 
 type Prediction = {
@@ -118,9 +118,9 @@ function App() {
                 ? `Model for ${prediction.ticker}`
                 : isLoadingInfo
                   ? 'Loading model…'
-                  : info
-                    ? `Starter: ${info.trained_on_ticker}`
-                    : 'Model info unavailable'}
+                  : info?.cached_models?.length
+                    ? `Cached: ${info.cached_models.length} ticker(s)`
+                    : 'No cached models yet'}
             </span>
           </div>
 

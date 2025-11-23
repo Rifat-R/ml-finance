@@ -8,11 +8,8 @@ This is JUST for educational purposes, not a trading edge.
 import re
 from typing import Optional
 
-import numpy as np
 import pandas as pd
 import yfinance as yf
-from lightgbm import LGBMClassifier
-import joblib
 
 
 def clean_name(name: str) -> str:
@@ -71,73 +68,9 @@ def create_features(df: pd.DataFrame) -> pd.DataFrame:
 
     # Keep only the columns we care about for modeling
     cols = ["ret_1", "ret_3", "ret_5", "ret_10", "vol_10", "target"]
-    df = df[cols].copy()
+    df = df[cols].copy()  # type: ignore
 
     # Clean column names for LightGBM safety
     df.columns = [clean_name(c) for c in df.columns]
 
     return df
-
-
-def train_and_save_model(
-    ticker: str = "AAPL",
-    model_path: str = "lgbm_direction.pkl",
-) -> None:
-    print(f"Downloading data for {ticker}...")
-    raw = download_data(ticker)
-    print("Creating features...")
-    df = create_features(raw)
-
-    # After cleaning, feature names should still be these (already safe):
-    feature_cols = ["ret_1", "ret_3", "ret_5", "ret_10", "vol_10"]
-    # But to be extra safe, clean them the same way:
-    feature_cols = [clean_name(c) for c in feature_cols]
-
-    # Make sure these columns actually exist
-    missing = [c for c in feature_cols if c not in df.columns]
-    if missing:
-        raise RuntimeError(
-            f"Missing expected feature columns: {missing}. Actual columns: {df.columns.tolist()}"
-        )
-
-    X = df.loc[:, feature_cols].copy()
-    y = df["target"].copy()
-
-    # Final sanity: clean X column names again
-    X.columns = [clean_name(c) for c in X.columns]
-
-    print("Data shape:", X.shape)
-    print("Feature columns:", list(X.columns))
-
-    # Simple time-based split: first 80% train, last 20% test
-    split = int(len(df) * 0.8)
-    X_train, X_test = X.iloc[:split], X.iloc[split:]
-    y_train, y_test = y.iloc[:split], y.iloc[split:]
-
-    print("Training LightGBM model...")
-    model = LGBMClassifier(
-        n_estimators=200,
-        learning_rate=0.05,
-        max_depth=-1,
-        random_state=42,
-    )
-
-    model.fit(X_train, y_train)
-
-    # Very quick sanity check accuracy (NOT a proper evaluation)
-    y_pred = model.predict(X_test)
-    acc = (y_pred == y_test).mean()
-    print(f"Test accuracy (toy, not CV): {acc:.3f}")
-
-    artifact = {
-        "model": model,
-        "feature_cols": list(X.columns),
-        "ticker": ticker,
-    }
-
-    joblib.dump(artifact, model_path)
-    print(f"Saved model to {model_path}")
-
-
-if __name__ == "__main__":
-    train_and_save_model()

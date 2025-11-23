@@ -12,21 +12,11 @@ from ..train_lgbm_direction import create_features, download_data
 # Create the router
 router = APIRouter()
 
-MODEL_PATH = "lgbm_direction.pkl"
 MODEL_DIR = "models"
-
-try:
-    artifact = joblib.load(MODEL_PATH)
-    model = artifact["model"]
-    feature_cols = artifact["feature_cols"]
-    trained_ticker = artifact["ticker"]
-except Exception as e:
-    raise RuntimeError(f"Could not load model '{MODEL_PATH}'. Error: {e}")
+FEATURE_COLS = ["ret_1", "ret_3", "ret_5", "ret_10", "vol_10"]
 
 # Cache models per ticker to avoid retraining on every request
-model_cache: dict[str, dict[str, object]] = {
-    str(trained_ticker).upper(): {"model": model, "feature_cols": feature_cols}
-}
+model_cache: dict[str, dict[str, object]] = {}
 
 
 class TickerRequest(BaseModel):
@@ -54,7 +44,9 @@ class PredictionWithCloses(PredictionResponse):
     closes_used: list[float]
 
 
-def build_features_from_closes(closes: list[float], feature_cols: list[str]) -> np.ndarray:
+def build_features_from_closes(
+    closes: list[float], feature_cols: list[str]
+) -> np.ndarray:
     """
     Convert a sequence of close prices into feature vector:
     ret_1, ret_3, ret_5, ret_10, vol_10
@@ -88,7 +80,9 @@ def build_features_from_closes(closes: list[float], feature_cols: list[str]) -> 
     return x
 
 
-def _predict_from_features(closes: list[float], model_obj, feature_cols: list[str]) -> PredictionResponse:
+def _predict_from_features(
+    closes: list[float], model_obj, feature_cols: list[str]
+) -> PredictionResponse:
     try:
         X = build_features_from_closes(closes, feature_cols)
     except ValueError as e:
@@ -108,20 +102,27 @@ def fetch_latest_closes(ticker: str, window: int) -> list[float]:
     Fetch recent daily close prices using yfinance.
     """
     data = yf.download(ticker, period="180d", interval="1d", progress=False)
-    if data.empty:
-        raise HTTPException(status_code=502, detail=f"Could not download closes for '{ticker}'.")
+    if data is None or data.empty:
+        raise HTTPException(
+            status_code=502, detail=f"Could not download closes for '{ticker}'."
+        )
 
     # yfinance sometimes returns MultiIndex columns; normalise to a Series of closes
     closes_slice = None
     if isinstance(data.columns, pd.MultiIndex):
-        close_columns = [col for col in data.columns if isinstance(col, tuple) and "Close" in col]
+        close_columns = [
+            col for col in data.columns if isinstance(col, tuple) and "Close" in col
+        ]
         if close_columns:
             closes_slice = data[close_columns[0]]
     elif "Close" in data.columns:
         closes_slice = data["Close"]
 
     if closes_slice is None:
-        raise HTTPException(status_code=502, detail=f"Downloaded data did not include close prices for '{ticker}'.")
+        raise HTTPException(
+            status_code=502,
+            detail=f"Downloaded data did not include close prices for '{ticker}'.",
+        )
 
     if isinstance(closes_slice, pd.DataFrame):
         # Pick the first column if multiple tickers were returned
@@ -144,12 +145,13 @@ def train_model_for_ticker(ticker: str) -> dict[str, object]:
     raw = download_data(ticker)
     df = create_features(raw)
 
-    feature_cols_local = ["ret_1", "ret_3", "ret_5", "ret_10", "vol_10"]
-    missing = [c for c in feature_cols_local if c not in df.columns]
+    missing = [c for c in FEATURE_COLS if c not in df.columns]
     if missing:
-        raise HTTPException(status_code=500, detail=f"Training failed: missing features {missing}")
+        raise HTTPException(
+            status_code=500, detail=f"Training failed: missing features {missing}"
+        )
 
-    X = df.loc[:, feature_cols_local].copy()
+    X = df.loc[:, FEATURE_COLS].copy()
     y = df["target"].copy()
 
     split = int(len(df) * 0.8)
@@ -166,7 +168,7 @@ def train_model_for_ticker(ticker: str) -> dict[str, object]:
 
     artifact_local = {
         "model": model_obj,
-        "feature_cols": feature_cols_local,
+        "feature_cols": FEATURE_COLS,
         "ticker": ticker,
     }
 
@@ -188,22 +190,28 @@ def load_or_train_model(ticker: str) -> dict[str, object]:
     if os.path.exists(disk_path):
         try:
             artifact_local = joblib.load(disk_path)
-            model_cache[key] = {"model": artifact_local["model"], "feature_cols": artifact_local["feature_cols"]}
+            model_cache[key] = {
+                "model": artifact_local["model"],
+                "feature_cols": artifact_local["feature_cols"],
+            }
             return model_cache[key]
         except Exception:
             # Fall back to retraining if loading fails
             pass
 
     artifact_local = train_model_for_ticker(ticker)
-    model_cache[key] = {"model": artifact_local["model"], "feature_cols": artifact_local["feature_cols"]}
+    model_cache[key] = {
+        "model": artifact_local["model"],
+        "feature_cols": artifact_local["feature_cols"],
+    }
     return model_cache[key]
 
 
 @router.get("/predict-info")
 def predict_info():
     return {
-        "trained_on_ticker": trained_ticker,
-        "features_expected": feature_cols,
+        "features_expected": FEATURE_COLS,
+        "cached_models": list(model_cache.keys()),
     }
 
 
@@ -214,7 +222,9 @@ def predict_direction_from_ticker(request: TickerRequest):
     """
     closes = fetch_latest_closes(request.ticker, window=request.window)
     model_entry = load_or_train_model(request.ticker)
-    base_prediction = _predict_from_features(closes, model_entry["model"], model_entry["feature_cols"])
+    base_prediction = _predict_from_features(
+        closes, model_entry["model"], model_entry["feature_cols"]  # type: ignore
+    )
 
     return PredictionWithCloses(
         ticker=request.ticker.upper(),
