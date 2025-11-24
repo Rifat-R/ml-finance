@@ -1,6 +1,5 @@
 import os
 import joblib
-import numpy as np
 import pandas as pd
 import yfinance as yf
 from fastapi import APIRouter, HTTPException
@@ -8,12 +7,12 @@ from lightgbm import LGBMClassifier
 from pydantic import BaseModel, Field
 from sklearn.metrics import accuracy_score
 
-from ..train_lgbm_direction import create_features, download_data
+from ..features import FEATURE_COLS, build_features_from_closes, create_features
+from ..train_lgbm_direction import download_data
 
 router = APIRouter()
 
 MODEL_DIR = "models"
-FEATURE_COLS = ["ret_1", "ret_3", "ret_5", "ret_10", "vol_10"]
 
 
 class TickerRequest(BaseModel):
@@ -52,47 +51,9 @@ class TickerInfoResponse(BaseModel):
     summary: str | None = None
 
 
-def build_features_from_closes(
-    closes: list[float], feature_cols: list[str]
-) -> np.ndarray:
-    """
-    Converting a sequence of close prices -> Percentage return for
-    each day -> build features. (for prediction, not training)
-    """
-    closes_arr = np.array(closes, dtype=float)
-
-    if len(closes_arr) < 11:
-        raise ValueError("Need at least 11 closing prices for feature extraction.")
-
-    # Computing the percentage return for each day
-    returns = closes_arr[1:] / closes_arr[:-1] - 1.0
-    s = pd.Series(returns)
-
-    # Create features identical to the training script
-    ret_1 = s.iloc[-1]
-    ret_3 = s.iloc[-3:].mean()
-    ret_5 = s.iloc[-5:].mean()
-    ret_10 = s.iloc[-10:].mean()
-    vol_10 = s.iloc[-10:].std()
-
-    feature_dict = {
-        "ret_1": ret_1,
-        "ret_3": ret_3,
-        "ret_5": ret_5,
-        "ret_10": ret_10,
-        "vol_10": vol_10,
-    }
-
-    # Ensure correct ordering
-    x = np.array([[feature_dict[c] for c in feature_cols]], dtype=float)
-    return x
-
-
-def _predict_from_features(
-    closes: list[float], model_obj, feature_cols: list[str]
-) -> PredictionResponse:
+def _predict_from_features(closes: list[float], model_obj) -> PredictionResponse:
     try:
-        X = build_features_from_closes(closes, feature_cols)
+        X = build_features_from_closes(closes)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -285,7 +246,7 @@ def predict_direction_from_ticker(request: TickerRequest):
     closes = fetch_latest_closes(request.ticker, window=request.window)
     model_entry = load_or_train_model(request.ticker)
     base_prediction = _predict_from_features(
-        closes, model_entry["model"], model_entry["feature_cols"]  # type: ignore
+        closes, model_entry["model"]  # type: ignore
     )
 
     accuracy = model_entry.get("accuracy", 0.0)
