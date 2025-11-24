@@ -48,6 +48,7 @@ def create_features(df: pd.DataFrame) -> pd.DataFrame:
 
     # Daily returns from the close price
     df["return"] = df[close_col].pct_change()
+    df = df.loc[df["return"].abs() > 0.002]  # remove days with < 0.2% movement
 
     # Simple features from past returns
     df["ret_1"] = df["return"]
