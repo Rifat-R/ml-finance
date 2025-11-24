@@ -58,7 +58,7 @@ def build_features_from_closes(
 ) -> np.ndarray:
     """
     Converting a sequence of close prices -> Percentage return for
-    each day -> build features.
+    each day -> build features. (for prediction, not training)
     """
     closes_arr = np.array(closes, dtype=float)
 
@@ -174,6 +174,7 @@ def train_model_for_ticker(ticker: str) -> dict[str, object]:
         max_depth=-1,
         random_state=42,
     )
+
     model_obj.fit(X_train, y_train)
     y_pred = model_obj.predict(X_test)
     acc = accuracy_score(y_test, y_pred)
@@ -230,15 +231,31 @@ def predict_info():
     }
 
 
+def _ticker_exists(ticker: str) -> bool:
+    """
+    Check if a ticker exists by attempting to download minimal data.
+    """
+    try:
+        data = yf.Ticker(ticker).history(period="1d")
+        return data is not None and not data.empty
+    except Exception:
+        return False
+
+
 @router.get("/ticker-info", response_model=TickerInfoResponse)
 def ticker_info(ticker: str):
     """
-    Lightweight ticker metadata using yfinance. Returns best-effort fields and tolerates missing keys.
+    Lightweight ticker metadata using yfinance.
     """
     if not ticker or not ticker.strip():
         raise HTTPException(status_code=400, detail="Ticker symbol is required.")
 
     symbol = ticker.strip()
+    if not _ticker_exists(symbol):
+        raise HTTPException(
+            status_code=404, detail=f"Ticker '{symbol}' does not exist."
+        )
+
     try:
         t = yf.Ticker(symbol)
         info = t.get_info()

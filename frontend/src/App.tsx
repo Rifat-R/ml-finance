@@ -111,6 +111,7 @@ function App() {
       }
       const data: TickerInfo = await response.json()
       setTickerInfo(data)
+      console.log(data)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not load ticker info'
       setTickerInfoError(message)
@@ -122,6 +123,8 @@ function App() {
   const requestPrediction = async (endpoint: string, payload: Record<string, unknown>) => {
     setPredictError(null)
     setIsPredicting(true)
+    console.log(payload.ticker)
+    fetchTickerInfo(payload.ticker as string)
     try {
       const response = await fetch(`${apiBase}${endpoint}`, {
         method: 'POST',
@@ -137,9 +140,8 @@ function App() {
 
       const data: Prediction = await response.json()
       setPrediction(data)
-      if (data.ticker) {
-        fetchTickerInfo(data.ticker)
-      }
+
+
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Prediction request failed'
       setPredictError(message)
@@ -302,7 +304,7 @@ function App() {
                 </div>
               )}
               {isLoadingTickerInfo && <p className="text-sm text-slate-400">Fetching company details…</p>}
-              {!isLoadingTickerInfo && tickerInfo && (
+              {!isLoadingTickerInfo && !tickerInfoError && tickerInfo && (
                 <div className="mt-3 space-y-2 text-sm text-slate-200">
                   <div className="flex flex-col gap-1">
                     <span className="text-xs uppercase tracking-[0.18em] text-slate-400">Name</span>
