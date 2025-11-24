@@ -274,28 +274,6 @@ function App() {
               <p className="text-sm text-slate-400">Submit a ticker to see the model&apos;s probabilities.</p>
             )}
 
-            <div className="mt-6 border-t border-slate-800 pt-4">
-              <h3 className="text-base font-semibold text-slate-100">Model inputs</h3>
-              {infoError && (
-                <div className="mt-2 rounded-lg border border-rose-400/60 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">
-                  {infoError}
-                </div>
-              )}
-              {isLoadingInfo && <p className="text-sm text-slate-400">Loading predictor metadata…</p>}
-              {info && (
-                <ul className="mt-3 flex flex-wrap gap-2">
-                  {info.features_expected.map((feature) => (
-                    <li
-                      key={feature}
-                      className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-sm font-semibold text-slate-100"
-                    >
-                      {feature}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
             <div className="mt-5 border-t border-slate-800 pt-4">
               <h3 className="text-base font-semibold text-slate-100">Ticker info</h3>
               {tickerInfoError && (
