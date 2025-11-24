@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react'
 
 type PredictorInfo = {
   features_expected: string[]
-  cached_models?: string[]
 }
 
 type Prediction = {
@@ -13,6 +12,7 @@ type Prediction = {
   ticker?: string
   closes_used?: number[]
   accuracy: number
+  overfitting_val?: number
 }
 
 type TickerInfo = {
@@ -190,15 +190,6 @@ function App() {
                 <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Input</p>
                 <h2 className="text-xl font-semibold text-slate-50">Ticker lookup</h2>
               </div>
-              <span className="inline-flex items-center rounded-full border border-cyan-300/60 bg-cyan-400/10 px-3 py-1 text-sm font-semibold text-cyan-200">
-                {prediction?.ticker
-                  ? `Model for ${prediction.ticker}`
-                  : isLoadingInfo
-                    ? 'Loading model…'
-                    : info?.cached_models?.length
-                      ? `Cached: ${info.cached_models.length}`
-                      : 'No cached models'}
-              </span>
             </div>
 
             <label className="mb-2 block text-sm font-semibold text-slate-200" htmlFor="ticker">
@@ -267,6 +258,11 @@ function App() {
                   <ProgressBar label="Down" value={prediction.prob_down} gradient="bg-gradient-to-r from-amber-400 to-rose-500" delay={60} />
                   <ProgressBar label="Acc" value={prediction.accuracy} gradient="bg-gradient-to-r from-amber-400 to-cyan-600" delay={120} />
                 </div>
+                {prediction.overfitting_val !== undefined && prediction.overfitting_val > 0.1 && (
+                  <div className="rounded-lg border border-amber-300/60 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">
+                    Model may be overfitting (train and test gap: {formatProbability(prediction.overfitting_val)}).
+                  </div>
+                )}
               </div>
             )}
 

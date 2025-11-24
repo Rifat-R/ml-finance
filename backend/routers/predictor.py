@@ -15,8 +15,6 @@ router = APIRouter()
 MODEL_DIR = "models"
 FEATURE_COLS = ["ret_1", "ret_3", "ret_5", "ret_10", "vol_10"]
 
-model_cache: dict[str, dict[str, object]] = {}
-
 
 class TickerRequest(BaseModel):
     ticker: str = Field(
@@ -36,12 +34,13 @@ class PredictionResponse(BaseModel):
     direction: str  # "up" or "down"
     prob_up: float
     prob_down: float
-    accuracy: float | None = None
 
 
-class PredictionWithCloses(PredictionResponse):
+class PredictionData(PredictionResponse):
     ticker: str
     closes_used: list[float]
+    accuracy: float
+    overfitting_val: float
 
 
 class TickerInfoResponse(BaseModel):
@@ -110,7 +109,7 @@ def fetch_latest_closes(ticker: str, window: int) -> list[float]:
     """
     Fetch recent daily close prices using yfinance.
     """
-    data = yf.download(ticker, period="180d", interval="1d", progress=False)
+    data = yf.download(ticker, period="1y", interval="1d", progress=False)
     if data is None or data.empty:
         raise HTTPException(
             status_code=502, detail=f"Could not download closes for '{ticker}'."
@@ -171,7 +170,13 @@ def train_model_for_ticker(ticker: str) -> dict[str, object]:
     model_obj = LGBMClassifier(
         n_estimators=200,
         learning_rate=0.05,
-        max_depth=-1,
+        max_depth=3,  # LIMIT DEPTH
+        num_leaves=7,  # SIMPLE TREES
+        min_data_in_leaf=50,  # REDUCE MEMORIZATION
+        lambda_l1=1.0,
+        lambda_l2=1.0,
+        subsample=0.8,
+        colsample_bytree=0.8,
         random_state=42,
     )
 
@@ -179,11 +184,20 @@ def train_model_for_ticker(ticker: str) -> dict[str, object]:
     y_pred = model_obj.predict(X_test)
     acc = accuracy_score(y_test, y_pred)
 
+    y_train_pred = model_obj.predict(X_train)
+    y_test_pred = model_obj.predict(X_test)
+
+    train_acc = accuracy_score(y_train, y_train_pred)
+    test_acc = accuracy_score(y_test, y_test_pred)
+
+    overfitting_val = train_acc - test_acc
+
     artifact_local = {
         "model": model_obj,
         "feature_cols": FEATURE_COLS,
         "ticker": ticker,
         "accuracy": acc,
+        "overfitting_val": overfitting_val,
     }
 
     os.makedirs(MODEL_DIR, exist_ok=True)
@@ -196,38 +210,24 @@ def train_model_for_ticker(ticker: str) -> dict[str, object]:
 def load_or_train_model(ticker: str) -> dict[str, object]:
     key = ticker.upper()
 
-    cached = model_cache.get(key)
-    if cached:
-        return cached
-
     disk_path = os.path.join(MODEL_DIR, f"lgbm_direction_{key}.pkl")
     if os.path.exists(disk_path):
         try:
             artifact_local = joblib.load(disk_path)
-            model_cache[key] = {
-                "model": artifact_local["model"],
-                "feature_cols": artifact_local["feature_cols"],
-                "accuracy": artifact_local["accuracy"],
-            }
-            return model_cache[key]
+            return artifact_local
         except Exception:
             # Fall back to retraining if loading fails
             pass
 
+    # Big API request to yFinance
     artifact_local = train_model_for_ticker(ticker)
-    model_cache[key] = {
-        "model": artifact_local["model"],
-        "feature_cols": artifact_local["feature_cols"],
-        "accuracy": artifact_local["accuracy"],
-    }
-    return model_cache[key]
+    return artifact_local
 
 
 @router.get("/predict-info")
 def predict_info():
     return {
         "features_expected": FEATURE_COLS,
-        "cached_models": list(model_cache.keys()),
     }
 
 
@@ -277,7 +277,7 @@ def ticker_info(ticker: str):
     )
 
 
-@router.post("/predict-direction-from-ticker", response_model=PredictionWithCloses)
+@router.post("/predict-direction-from-ticker", response_model=PredictionData)
 def predict_direction_from_ticker(request: TickerRequest):
     """
     Fetch the latest closes for a ticker with yfinance and run the predictor.
@@ -288,11 +288,15 @@ def predict_direction_from_ticker(request: TickerRequest):
         closes, model_entry["model"], model_entry["feature_cols"]  # type: ignore
     )
 
-    base_prediction.accuracy = model_entry.get("accuracy", 0.0)  # type: ignore
+    accuracy = model_entry.get("accuracy", 0.0)
+    overfitting_val = model_entry.get("overfitting_val", 0.0)
+
     print(f"ACCURACY FROM PREDICT DIRECTION FROM TICKER: {model_entry.get('accuracy')}")
 
-    return PredictionWithCloses(
+    return PredictionData(
         ticker=request.ticker.upper(),
         closes_used=closes,
+        accuracy=accuracy,  # type: ignore
+        overfitting_val=overfitting_val,  # type: ignore
         **base_prediction.model_dump(),
     )
