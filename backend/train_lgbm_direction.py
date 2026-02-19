@@ -2,19 +2,7 @@ from typing import Optional
 
 import pandas as pd
 
-from tiingo import TiingoClient
-
-from dotenv import load_dotenv
-import os
-
-load_dotenv()
-
-TIINGO_API_KEY = os.getenv("TIINGO_API_KEY")
-
-config = {}
-config["session"] = True
-config["api_key"] = TIINGO_API_KEY
-tiingo_client = TiingoClient()
+from backend.data import tiingo_client
 
 
 # TODO: Use "incremental loading", where we store the last time we
