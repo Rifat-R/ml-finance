@@ -1,27 +1,9 @@
-import re
 from typing import Sequence
 
 import numpy as np
 import pandas as pd
 
 FEATURE_COLS = ["ret_1", "ret_3", "ret_5", "ret_10", "vol_10"]
-
-
-def clean_name(name: str) -> str:
-    """Clean a column/feature name so LightGBM doesn't complain about special JSON characters."""
-    return re.sub(r"[^A-Za-z0-9_]+", "_", str(name))
-
-
-def _select_close_column(df: pd.DataFrame) -> str:
-    """Pick a close column, preferring 'Close' if present."""
-    if "Close" in df.columns:
-        return "Close"
-    candidates = [c for c in df.columns if "Close" in c]
-    if not candidates:
-        raise RuntimeError(
-            f"Could not find a 'Close' column in data. Columns: {df.columns.tolist()}"
-        )
-    return candidates[0]
 
 
 def _features_from_returns(returns: pd.Series) -> dict[str, float]:
@@ -42,7 +24,8 @@ def create_features(df: pd.DataFrame) -> pd.DataFrame:
     """
     df = df.copy()
 
-    close_col = _select_close_column(df)
+    # Should use adjClose to account for dividends and stock splits
+    close_col = "adjClose"
 
     # Daily percentage change for the close price, i.e. return = (close_t - close_{t-1}) / close_{t-1}
     df["return"] = df[close_col].pct_change()
@@ -61,8 +44,6 @@ def create_features(df: pd.DataFrame) -> pd.DataFrame:
 
     cols = [*FEATURE_COLS, "target"]
     df = df[cols].copy()  # type: ignore
-
-    df.columns = [clean_name(c) for c in df.columns]
 
     return df
 
