@@ -44,7 +44,7 @@ def create_features(df: pd.DataFrame) -> pd.DataFrame:
 
     close_col = _select_close_column(df)
 
-    # Daily returns from the close price
+    # Daily percentage change for the close price, i.e. return = (close_t - close_{t-1}) / close_{t-1}
     df["return"] = df[close_col].pct_change()
 
     df["ret_1"] = df["return"]
@@ -56,6 +56,7 @@ def create_features(df: pd.DataFrame) -> pd.DataFrame:
     # 1 if next day's return is positive, else 0
     df["target"] = (df["return"].shift(-1) > 0).astype(int)
 
+    # Drop rows with NaN e.g. first 9 rows for ret_10
     df = df.dropna()
 
     cols = [*FEATURE_COLS, "target"]

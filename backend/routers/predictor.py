@@ -129,15 +129,15 @@ def train_model_for_ticker(ticker: str) -> dict[str, object]:
 
     # Using 200 trees and a lower learning rate for better generalization
     model_obj = LGBMClassifier(
-        n_estimators=200,
+        n_estimators=100,
         learning_rate=0.05,
-        max_depth=3,  # LIMIT DEPTH
-        num_leaves=7,  # SIMPLE TREES
-        min_data_in_leaf=50,  # REDUCE MEMORIZATION
-        lambda_l1=1.0,
-        lambda_l2=1.0,
+        max_depth=3,
+        num_leaves=7,
+        min_data_in_leaf=20,
+        lambda_l1=0.1,
+        lambda_l2=0.1,
         subsample=0.8,
-        colsample_bytree=0.8,
+        colsample_bytree=1.0,
         random_state=42,
     )
 
@@ -246,7 +246,8 @@ def predict_direction_from_ticker(request: TickerRequest):
     closes = fetch_latest_closes(request.ticker, window=request.window)
     model_entry = load_or_train_model(request.ticker)
     base_prediction = _predict_from_features(
-        closes, model_entry["model"]  # type: ignore
+        closes,
+        model_entry["model"],
     )
 
     accuracy = model_entry.get("accuracy", 0.0)
