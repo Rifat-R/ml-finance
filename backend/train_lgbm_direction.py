@@ -10,7 +10,7 @@ from .features import clean_name
 # download data and use that for start day
 # May be an issue due to adjusted close column
 def download_data(
-    ticker: str, start: str = "2015-01-01", end: Optional[str] = None
+    ticker: str, start: str = "2020-01-01", end: Optional[str] = None
 ) -> pd.DataFrame:
     data = yf.download(ticker, start=start, end=end)
     if data is None or data.empty:
