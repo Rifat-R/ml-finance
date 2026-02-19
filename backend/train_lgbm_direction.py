@@ -3,7 +3,7 @@ from typing import Optional
 import pandas as pd
 import yfinance as yf
 
-from .features import clean_name, create_features
+from .features import clean_name
 
 
 def download_data(
