@@ -1,106 +1,115 @@
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from collections.abc import Sequence
-from typing import override
+
 import numpy as np
 import pandas as pd
 
 
 class Feature(ABC):
+    """A feature that can be computed as a column over a full returns series."""
+
+    @property
     @abstractmethod
-    def compute_from_returns(self, returns: pd.Series) -> dict[str, float]:
-        """Compute feature vector from a sequence of close prices."""
-        pass
+    def name(self) -> str: ...
+
+    @abstractmethod
+    def compute_series(self, returns: pd.Series) -> pd.Series:
+        """Return a Series aligned with `returns` (same index/length)."""
+        ...
+
+    def compute_last(self, returns: pd.Series) -> float:
+        """Compute feature value for the latest point (today)."""
+        s = self.compute_series(returns)
+        return float(s.iloc[-1])
 
 
-class Ret1Feature(Feature):
-    @override
-    def compute_from_returns(self, returns: pd.Series) -> dict[str, float]:
-        return {"ret_1": returns.iloc[-1]}
+@dataclass(frozen=True)
+class RollingMeanReturn(Feature):
+    window: int
+
+    @property
+    def name(self) -> str:
+        return f"ret_{self.window}"
+
+    def compute_series(self, returns: pd.Series) -> pd.Series:
+        if self.window == 1:
+            return returns
+        return returns.rolling(self.window).mean()
 
 
-class Ret3Feature(Feature):
-    @override
-    def compute_from_returns(self, returns: pd.Series) -> dict[str, float]:
-        return {"ret_3": returns.iloc[-3:].mean()}
+@dataclass(frozen=True)
+class RollingStdReturn(Feature):
+    window: int
 
+    @property
+    def name(self) -> str:
+        return f"vol_{self.window}"
 
-class Ret5Feature(Feature):
-    @override
-    def compute_from_returns(self, returns: pd.Series) -> dict[str, float]:
-        return {"ret_5": returns.iloc[-5:].mean()}
-
-
-class Ret10Feature(Feature):
-    @override
-    def compute_from_returns(self, returns: pd.Series) -> dict[str, float]:
-        return {"ret_10": returns.iloc[-10:].mean()}
-
-
-class Vol10Feature(Feature):
-    @override
-    def compute_from_returns(self, returns: pd.Series) -> dict[str, float]:
-        return {"vol_10": returns.iloc[-10:].std()}
+    def compute_series(self, returns: pd.Series) -> pd.Series:
+        return returns.rolling(self.window).std()
 
 
 FEATURES: list[Feature] = [
-    Ret1Feature(),
-    Ret3Feature(),
-    Ret5Feature(),
-    Ret10Feature(),
-    Vol10Feature(),
+    RollingMeanReturn(1),
+    RollingMeanReturn(3),
+    RollingMeanReturn(5),
+    RollingMeanReturn(10),
+    RollingStdReturn(10),
 ]
 
+FEATURE_COLS: list[str] = [f.name for f in FEATURES]
 
-def _features_from_returns(returns: pd.Series) -> dict[str, float]:
-    feature_dict = {}
+
+def compute_feature_frame_from_returns(returns: pd.Series) -> pd.DataFrame:
+    """Compute all feature columns for every timestamp in `returns`."""
+    out = {}
     for f in FEATURES:
-        feature_dict.update(f.compute_from_returns(returns))
-    return feature_dict
+        out[f.name] = f.compute_series(returns)
+    return pd.DataFrame(out, index=returns.index)
 
 
-def create_features(df: pd.DataFrame) -> pd.DataFrame:
+def create_features(df: pd.DataFrame, close_col: str = "adjClose") -> pd.DataFrame:
     """
-    Build training features for whole training data.
-    Outputs columns: FEATURE_COLS + target.
+    Training features over the full history.
+    Outputs columns: FEATURE_COLS + target
     """
     df = df.copy()
 
-    # Should use adjClose to account for dividends and stock splits
-    close_col = "adjClose"
-
-    # Daily percentage change for the close price, i.e. return = (close_t - close_{t-1}) / close_{t-1}
     df["return"] = df[close_col].pct_change()
 
-    df["ret_1"] = df["return"]
-    df["ret_3"] = df["return"].rolling(3).mean()
-    df["ret_5"] = df["return"].rolling(5).mean()
-    df["ret_10"] = df["return"].rolling(10).mean()
-    df["vol_10"] = df["return"].rolling(10).std()
+    feat_df = compute_feature_frame_from_returns(df["return"])
+    df = df.join(feat_df)
 
-    # 1 if next day's return is positive, else 0
+    # next-day direction target
     df["target"] = (df["return"].shift(-1) > 0).astype(int)
 
-    # Drop rows with NaN e.g. first 9 rows for ret_10
-    df = df.dropna()
+    # drop rows where any feature/target is NaN (initial rolling + last target)
+    df = df.dropna(subset=FEATURE_COLS + ["target"])
 
-    cols = [*FEATURE_COLS, "target"]
-    df = df[cols].copy()  # type: ignore
-
-    return df
+    return df[FEATURE_COLS + ["target"]].copy()
 
 
 def build_features_from_closes(closes: Sequence[float]) -> np.ndarray:
     """
-    Convert a sequence of close prices into feature vector matching FEATURE_COLS.
+    Inference features for "today" from the most recent closes.
+    Uses SAME feature definitions as training (no duplicated formulas).
     """
-    closes_arr = np.array(closes, dtype=float)
+    closes_arr = np.asarray(closes, dtype=float)
 
-    if len(closes_arr) < 11:
-        raise ValueError("Need at least 11 closing prices for feature extraction.")
+    if closes_arr.size < 2:
+        raise ValueError("Need at least 2 closing prices to compute returns.")
 
-    returns = closes_arr[1:] / closes_arr[:-1] - 1.0
-    s = pd.Series(returns)
-    feature_dict = _features_from_returns(s)
+    returns = pd.Series(closes_arr[1:] / closes_arr[:-1] - 1.0)
 
-    x = np.array([[feature_dict[c] for c in FEATURE_COLS]], dtype=float)
+    # Ensure we have enough history for the largest window
+    max_window = 1
+    for f in FEATURES:
+        if isinstance(f, (RollingMeanReturn, RollingStdReturn)):
+            max_window = max(max_window, f.window)
+
+    if len(returns) < max_window:
+        raise ValueError(f"Need at least {max_window + 1} closes for these features.")
+
+    x = np.array([[f.compute_last(returns) for f in FEATURES]], dtype=float)
     return x
