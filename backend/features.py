@@ -93,7 +93,6 @@ def create_features(df: pd.DataFrame, close_col: str = "adjClose") -> pd.DataFra
 def build_features_from_closes(closes: Sequence[float]) -> np.ndarray:
     """
     Inference features for "today" from the most recent closes.
-    Uses SAME feature definitions as training (no duplicated formulas).
     """
     closes_arr = np.asarray(closes, dtype=float)
 
