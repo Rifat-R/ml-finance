@@ -1,6 +1,6 @@
 import os
-
 from tiingo import TiingoClient
+
 from dotenv import load_dotenv
 
 load_dotenv()

@@ -51,19 +51,30 @@ dependencies = [
     "yfinance>=1.2.0",
 ]
 
+
 [tool.basedpyright]
-exclude = ["**/node_modules",
-    "**/__pycache__",
-    "src/experimental",
-    "src/typestubs",
-    "models/"
+venvPath = "."
+venv = ".venv"
+pythonVersion = "3.12"
+
+include = [ "." ]
+exclude = [
+  ".venv/",
+  ".git/",
+  "**/__pycache__",
 ]
-ignore = ["models/"]
-defineConstant = { DEBUG = true }
-# stubPath = "src/stubs"
 
-reportMissingImports = "error"
+reportMissingImports = true
 reportMissingTypeStubs = false
+typeCheckingMode = "basic"
 
-pythonVersion = "3.13"
-pythonPlatform = "Linux"
+reportOptionalMemberAccess = "warning"
+reportOptionalSubscript = "warning"
+reportOptionalCall = "warning"
+reportOptionalIterable = "warning"
+
+reportGeneralTypeIssues = "warning"
+reportUntypedFunctionDecorator = "none"
+reportUnnecessaryTypeIgnoreComment = "warning"
+reportUnboundVariable = "error"
+reportUnusedImport = "warning"
