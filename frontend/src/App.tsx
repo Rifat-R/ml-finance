@@ -203,7 +203,7 @@ function App() {
                 placeholder="MSFT"
                 className="w-full rounded-lg border border-white/10 bg-white/10 px-3 py-3 text-base text-slate-100 shadow-inner shadow-black/20 outline-none ring-1 ring-transparent transition focus:border-cyan-400/70 focus:ring-cyan-400/40"
               />
-              <p className="text-sm text-slate-400">Uses the most recent daily closes (default 30-day window) via yfinance.</p>
+              <p className="text-sm text-slate-400">Uses the most recent daily closes (default 30-day window) via tiingo.</p>
             </div>
 
             {predictError && (

@@ -1,7 +1,5 @@
 from typing import Optional
-
 import pandas as pd
-
 from backend.data import tiingo_client
 
 

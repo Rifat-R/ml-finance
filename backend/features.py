@@ -1,20 +1,61 @@
-from typing import Sequence
-
+from abc import ABC, abstractmethod
+from collections.abc import Sequence
+from typing import override
 import numpy as np
 import pandas as pd
 
-FEATURE_COLS = ["ret_1", "ret_3", "ret_5", "ret_10", "vol_10"]
+
+class Feature(ABC):
+    @abstractmethod
+    def compute_from_returns(self, returns: pd.Series) -> dict[str, float]:
+        """Compute feature vector from a sequence of close prices."""
+        pass
+
+
+class Ret1Feature(Feature):
+    @override
+    def compute_from_returns(self, returns: pd.Series) -> dict[str, float]:
+        return {"ret_1": returns.iloc[-1]}
+
+
+class Ret3Feature(Feature):
+    @override
+    def compute_from_returns(self, returns: pd.Series) -> dict[str, float]:
+        return {"ret_3": returns.iloc[-3:].mean()}
+
+
+class Ret5Feature(Feature):
+    @override
+    def compute_from_returns(self, returns: pd.Series) -> dict[str, float]:
+        return {"ret_5": returns.iloc[-5:].mean()}
+
+
+class Ret10Feature(Feature):
+    @override
+    def compute_from_returns(self, returns: pd.Series) -> dict[str, float]:
+        return {"ret_10": returns.iloc[-10:].mean()}
+
+
+class Vol10Feature(Feature):
+    @override
+    def compute_from_returns(self, returns: pd.Series) -> dict[str, float]:
+        return {"vol_10": returns.iloc[-10:].std()}
+
+
+FEATURES: list[Feature] = [
+    Ret1Feature(),
+    Ret3Feature(),
+    Ret5Feature(),
+    Ret10Feature(),
+    Vol10Feature(),
+]
 
 
 def _features_from_returns(returns: pd.Series) -> dict[str, float]:
-    """Compute feature dict from a return series."""
-    return {
-        "ret_1": returns.iloc[-1],
-        "ret_3": returns.iloc[-3:].mean(),
-        "ret_5": returns.iloc[-5:].mean(),
-        "ret_10": returns.iloc[-10:].mean(),
-        "vol_10": returns.iloc[-10:].std(),
-    }
+    feature_dict = {}
+    for f in FEATURES:
+        feature_dict.update(f.compute_from_returns(returns))
+    return feature_dict
 
 
 def create_features(df: pd.DataFrame) -> pd.DataFrame:
