@@ -7,8 +7,6 @@ import pandas as pd
 
 
 class Feature(ABC):
-    """A feature that can be computed as a column over a full returns series."""
-
     @property
     @abstractmethod
     def name(self) -> str: ...
@@ -93,6 +91,7 @@ def create_features(df: pd.DataFrame, close_col: str = "adjClose") -> pd.DataFra
 def build_features_from_closes(closes: Sequence[float]) -> np.ndarray:
     """
     Inference features for "today" from the most recent closes.
+    Used for making a prediction for the next day.
     """
     closes_arr = np.asarray(closes, dtype=float)
 
