@@ -137,7 +137,7 @@ def create_features(df: pd.DataFrame, close_col: str = "adjClose") -> pd.DataFra
     return df[FEATURE_COLS + ["target"]].copy()
 
 
-def build_features_from_closes(closes: Sequence[float]) -> np.ndarray:
+def build_features_from_closes(closes: Sequence[float]) -> pd.DataFrame:
     closes_arr = np.asarray(closes, dtype=float)
     closes_series = pd.Series(closes_arr)
 
@@ -149,8 +149,5 @@ def build_features_from_closes(closes: Sequence[float]) -> np.ndarray:
 
     returns = closes_series.pct_change()
 
-    x = np.array(
-        [[f.compute_last(returns, closes_series) for f in FEATURES]],
-        dtype=float,
-    )
-    return x
+    row = {f.name: f.compute_last(returns, closes_series) for f in FEATURES}
+    return pd.DataFrame([row], columns=FEATURE_COLS)
