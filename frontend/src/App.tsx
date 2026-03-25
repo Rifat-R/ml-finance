@@ -68,7 +68,6 @@ function App() {
   const [info, setInfo] = useState<PredictorInfo | null>(null)
   const [infoError, setInfoError] = useState<string | null>(null)
   const [prediction, setPrediction] = useState<Prediction | null>(null)
-  const [predictError, setPredictError] = useState<string | null>(null)
   const [isPredicting, setIsPredicting] = useState<boolean>(false)
   const [isLoadingInfo, setIsLoadingInfo] = useState<boolean>(false)
   const [tickerInfo, setTickerInfo] = useState<TickerInfo | null>(null)
@@ -121,7 +120,6 @@ function App() {
   }
 
   const requestPrediction = async (endpoint: string, payload: Record<string, unknown>) => {
-    setPredictError(null)
     setIsPredicting(true)
     console.log(payload.ticker)
     fetchTickerInfo(payload.ticker as string)
@@ -144,7 +142,6 @@ function App() {
 
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Prediction request failed'
-      setPredictError(message)
     } finally {
       setIsPredicting(false)
     }
@@ -205,12 +202,6 @@ function App() {
               />
               <p className="text-sm text-slate-400">Uses the most recent daily closes (default 30-day window) via tiingo.</p>
             </div>
-
-            {predictError && (
-              <div className="mt-4 rounded-lg border border-rose-400/60 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">
-                {predictError}
-              </div>
-            )}
 
             <div className="mt-5 flex flex-wrap items-center gap-3">
               <button

@@ -12,13 +12,13 @@ class Feature(ABC):
     def name(self) -> str: ...
 
     @abstractmethod
-    def compute_series(self, returns: pd.Series) -> pd.Series:
+    def compute_series(self, returns: pd.Series, closes: pd.Series) -> pd.Series:
         """Return a Series aligned with `returns` (same index/length)."""
         ...
 
-    def compute_last(self, returns: pd.Series) -> float:
-        """Compute feature value for the latest point (today)."""
-        s = self.compute_series(returns)
+    def compute_last(self, returns: pd.Series, closes: pd.Series) -> float:
+        """Compute feature value for tee latest point (today)."""
+        s = self.compute_series(returns, closes)
         return float(s.iloc[-1])
 
 
@@ -30,7 +30,7 @@ class RollingMeanReturn(Feature):
     def name(self) -> str:
         return f"ret_{self.window}"
 
-    def compute_series(self, returns: pd.Series) -> pd.Series:
+    def compute_series(self, returns: pd.Series, closes: pd.Series) -> pd.Series:
         if self.window == 1:
             return returns
         return returns.rolling(self.window).mean()
@@ -44,26 +44,75 @@ class RollingStdReturn(Feature):
     def name(self) -> str:
         return f"vol_{self.window}"
 
-    def compute_series(self, returns: pd.Series) -> pd.Series:
+    def compute_series(self, returns: pd.Series, closes: pd.Series) -> pd.Series:
         return returns.rolling(self.window).std()
+
+
+@dataclass(frozen=True)
+class CumulativeMomentum(Feature):
+    window: int
+
+    @property
+    def name(self) -> str:
+        return f"mom_{self.window}"
+
+    def compute_series(self, returns: pd.Series, closes: pd.Series) -> pd.Series:
+        if self.window == 1:
+            return returns
+        return (1.0 + returns).rolling(self.window).apply(np.prod, raw=True) - 1.0
+
+
+@dataclass(frozen=True)
+class PriceDistanceFromMA(Feature):
+    window: int
+
+    @property
+    def name(self) -> str:
+        return f"ma_dist_{self.window}"
+
+    def compute_series(self, returns: pd.Series, closes: pd.Series) -> pd.Series:
+        ma = closes.rolling(self.window).mean()
+        return closes / ma - 1.0
+
+
+@dataclass(frozen=True)
+class RSI(Feature):
+    window: int = 14
+
+    @property
+    def name(self) -> str:
+        return f"rsi_{self.window}"
+
+    def compute_series(self, returns: pd.Series, closes: pd.Series) -> pd.Series:
+        delta = closes.diff()
+        gain = delta.clip(lower=0.0)
+        loss = -delta.clip(upper=0.0)
+        avg_gain = gain.ewm(alpha=1.0 / self.window, adjust=False).mean()
+        avg_loss = loss.ewm(alpha=1.0 / self.window, adjust=False).mean()
+        rs = avg_gain / avg_loss
+        return 100.0 - (100.0 / (1.0 + rs))
 
 
 FEATURES: list[Feature] = [
     RollingMeanReturn(1),
-    RollingMeanReturn(3),
     RollingMeanReturn(5),
-    RollingMeanReturn(10),
     RollingStdReturn(10),
+    CumulativeMomentum(20),
+    PriceDistanceFromMA(20),
+    RSI(14),
 ]
 
 FEATURE_COLS: list[str] = [f.name for f in FEATURES]
 
 
-def compute_feature_frame_from_returns(returns: pd.Series) -> pd.DataFrame:
+def compute_feature_frame_from_returns(
+    returns: pd.Series,
+    closes: pd.Series,
+) -> pd.DataFrame:
     """Compute all feature columns for every timestamp in `returns`."""
     out = {}
     for f in FEATURES:
-        out[f.name] = f.compute_series(returns)
+        out[f.name] = f.compute_series(returns, closes)
     return pd.DataFrame(out, index=returns.index)
 
 
@@ -76,7 +125,7 @@ def create_features(df: pd.DataFrame, close_col: str = "adjClose") -> pd.DataFra
 
     df["return"] = df[close_col].pct_change()
 
-    feat_df = compute_feature_frame_from_returns(df["return"])
+    feat_df = compute_feature_frame_from_returns(df["return"], df[close_col])
     df = df.join(feat_df)
 
     # next-day direction target
@@ -89,25 +138,19 @@ def create_features(df: pd.DataFrame, close_col: str = "adjClose") -> pd.DataFra
 
 
 def build_features_from_closes(closes: Sequence[float]) -> np.ndarray:
-    """
-    Inference features for "today" from the most recent closes.
-    Used for making a prediction for the next day.
-    """
     closes_arr = np.asarray(closes, dtype=float)
+    closes_series = pd.Series(closes_arr)
 
-    if closes_arr.size < 2:
-        raise ValueError("Need at least 2 closing prices to compute returns.")
+    max_window = max(getattr(f, "window", 1) for f in FEATURES)
+    required_closes = max_window + 1
 
-    returns = pd.Series(closes_arr[1:] / closes_arr[:-1] - 1.0)
+    if closes_arr.size < required_closes:
+        raise ValueError(f"Need at least {required_closes} closing prices.")
 
-    # Ensure we have enough history for the largest window
-    max_window = 1
-    for f in FEATURES:
-        if isinstance(f, (RollingMeanReturn, RollingStdReturn)):
-            max_window = max(max_window, f.window)
+    returns = closes_series.pct_change()
 
-    if len(returns) < max_window:
-        raise ValueError(f"Need at least {max_window + 1} closes for these features.")
-
-    x = np.array([[f.compute_last(returns) for f in FEATURES]], dtype=float)
+    x = np.array(
+        [[f.compute_last(returns, closes_series) for f in FEATURES]],
+        dtype=float,
+    )
     return x

@@ -6,9 +6,11 @@ from fastapi import APIRouter, HTTPException
 from lightgbm import LGBMClassifier
 from pydantic import BaseModel, Field
 from sklearn.metrics import accuracy_score
+import numpy as np
 
 from ..features import FEATURE_COLS, build_features_from_closes, create_features
-from ..train_lgbm_direction import download_data
+
+from backend.data import fetch_stock_data
 
 router = APIRouter()
 
@@ -111,7 +113,7 @@ def train_model_for_ticker(ticker: str) -> dict[str, object]:
     """
     Train a new LightGBM model for the given ticker using the same pipeline as the training script.
     """
-    raw = download_data(ticker)
+    raw = fetch_stock_data(ticker)
     df = create_features(raw)
 
     missing = [c for c in FEATURE_COLS if c not in df.columns]
@@ -129,16 +131,17 @@ def train_model_for_ticker(ticker: str) -> dict[str, object]:
 
     # Using 200 trees and a lower learning rate for better generalization
     model_obj = LGBMClassifier(
-        n_estimators=100,
+        n_estimators=50,
         learning_rate=0.05,
-        max_depth=3,
         num_leaves=7,
-        min_data_in_leaf=20,
-        lambda_l1=0.1,
-        lambda_l2=0.1,
+        max_depth=3,
+        min_child_samples=50,
+        reg_alpha=0.1,
+        reg_lambda=0.1,
         subsample=0.8,
-        colsample_bytree=1.0,
+        colsample_bytree=0.8,
         random_state=42,
+        verbose=-1,
     )
 
     model_obj.fit(X_train, y_train)
@@ -152,6 +155,18 @@ def train_model_for_ticker(ticker: str) -> dict[str, object]:
     test_acc = accuracy_score(y_test, y_test_pred)
 
     overfitting_val = train_acc - test_acc
+
+    print(
+        f"TRAIN ACCURACY: {train_acc:.4f}, TEST ACCURACY: {test_acc:.4f}, OVERFITTING VAL: {overfitting_val:.4f}"
+    )
+
+    print(f"SHAPE: X_train: {X_train.shape}, X_test: {X_test.shape}")
+    print(
+        f"IS NAN: X_train: {np.isnan(X_train).sum()}, X_test: {np.isnan(X_test).sum()}"
+    )
+    print(
+        f"MEAN: X_train: {X_train.mean().mean():.4f}, X_test: {X_test.mean().mean():.4f}"
+    )
 
     artifact_local = {
         "model": model_obj,
