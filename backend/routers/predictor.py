@@ -57,12 +57,16 @@ class BacktestYear(BaseModel):
     accuracy: float
     model_return: float
     buy_hold_return: float
+    model_sharpe: float | None = None
+    buy_hold_sharpe: float | None = None
     curve: list[BacktestPoint]
 
 
 class BacktestOverall(BaseModel):
     model_return: float
     buy_hold_return: float
+    model_sharpe: float | None = None
+    buy_hold_sharpe: float | None = None
     curve: list[BacktestPoint]
 
 

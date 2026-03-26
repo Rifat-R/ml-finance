@@ -12,6 +12,29 @@ from backend.data import fetch_stock_data
 from .features import FEATURE_COLS, compute_feature_frame_from_returns
 
 MODEL_DIR = "models"
+TRADING_DAYS_PER_YEAR = 252
+
+
+def _compute_annualized_sharpe(
+    returns: pd.Series | np.ndarray,
+    *,
+    risk_free_rate: float = 0.0,
+    periods_per_year: int = TRADING_DAYS_PER_YEAR,
+) -> float | None:
+    values = pd.Series(returns).dropna().astype(float)
+    if len(values) < 2:
+        return None
+
+    rf_per_period = risk_free_rate / periods_per_year
+    excess_returns = values - rf_per_period
+    volatility = float(excess_returns.std(ddof=1))
+    if np.isclose(volatility, 0.0):
+        return None
+
+    sharpe = np.sqrt(periods_per_year) * float(excess_returns.mean()) / volatility
+    if not np.isfinite(sharpe):
+        return None
+    return float(sharpe)
 
 
 def _make_model() -> LGBMClassifier:
@@ -166,6 +189,8 @@ def walk_forward_year_backtest(
     model_value = 1.0
     buy_hold_value = 1.0
     overall_curve: list[dict[str, object]] = []
+    overall_model_returns: list[float] = []
+    overall_buy_hold_returns: list[float] = []
     years: list[dict[str, object]] = []
 
     for year in range(start_year, end_year + 1):
@@ -193,6 +218,11 @@ def walk_forward_year_backtest(
         preds = model.predict(X_test)
         positions = (preds == 1).astype(float)
         strat_returns = next_returns.values * positions
+
+        year_model_returns = pd.Series(strat_returns)
+        year_buy_hold_returns = next_returns.reset_index(drop=True)
+        overall_model_returns.extend(year_model_returns.tolist())
+        overall_buy_hold_returns.extend(year_buy_hold_returns.tolist())
 
         year_model_value = 1.0
         year_buy_hold_value = 1.0
@@ -236,6 +266,8 @@ def walk_forward_year_backtest(
                 "accuracy": float(accuracy_score(y_test, preds)),
                 "model_return": float(year_model_value - 1.0),
                 "buy_hold_return": float(year_buy_hold_value - 1.0),
+                "model_sharpe": _compute_annualized_sharpe(year_model_returns),
+                "buy_hold_sharpe": _compute_annualized_sharpe(year_buy_hold_returns),
                 "curve": year_curve,
             }
         )
@@ -243,12 +275,19 @@ def walk_forward_year_backtest(
     if not years:
         raise HTTPException(status_code=500, detail="No backtest years available.")
 
+    overall_model_sharpe = _compute_annualized_sharpe(np.array(overall_model_returns))
+    overall_buy_hold_sharpe = _compute_annualized_sharpe(
+        np.array(overall_buy_hold_returns)
+    )
+
     return {
         "start_year": start_year,
         "end_year": end_year,
         "overall": {
             "model_return": float(model_value - 1.0),
             "buy_hold_return": float(buy_hold_value - 1.0),
+            "model_sharpe": overall_model_sharpe,
+            "buy_hold_sharpe": overall_buy_hold_sharpe,
             "curve": overall_curve,
         },
         "years": years,

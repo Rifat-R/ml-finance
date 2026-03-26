@@ -41,6 +41,8 @@ type BacktestPoint = {
 type BacktestOverall = {
   model_return: number
   buy_hold_return: number
+  model_sharpe?: number | null
+  buy_hold_sharpe?: number | null
   curve: BacktestPoint[]
 }
 
@@ -53,6 +55,7 @@ type BacktestResponse = {
 
 const formatProbability = (value: number) => `${(value * 100).toFixed(1)}%`
 const formatReturn = (value: number) => `${(value * 100).toFixed(1)}%`
+const formatSharpe = (value: number | null | undefined) => (value == null ? '—' : value.toFixed(2))
 
 type ProgressBarProps = {
   label: string
@@ -403,6 +406,14 @@ function App() {
                   <p className="text-2xl font-semibold text-cyan-100">
                     {formatReturn(backtest.overall.buy_hold_return)}
                   </p>
+                </div>
+                <div className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-3">
+                  <p className="text-xs uppercase tracking-[0.18em] text-emerald-200">Model Sharpe (ann.)</p>
+                  <p className="text-2xl font-semibold text-emerald-100">{formatSharpe(backtest.overall.model_sharpe)}</p>
+                </div>
+                <div className="rounded-xl border border-cyan-400/30 bg-cyan-500/10 px-4 py-3">
+                  <p className="text-xs uppercase tracking-[0.18em] text-cyan-200">Buy &amp; hold Sharpe (ann.)</p>
+                  <p className="text-2xl font-semibold text-cyan-100">{formatSharpe(backtest.overall.buy_hold_sharpe)}</p>
                 </div>
               </div>
 
