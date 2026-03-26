@@ -3,18 +3,14 @@ import joblib
 import pandas as pd
 import yfinance as yf
 from fastapi import APIRouter, HTTPException
-from lightgbm import LGBMClassifier
 from pydantic import BaseModel, Field
-from sklearn.metrics import accuracy_score
-import numpy as np
 
-from ..features import FEATURE_COLS, build_features_from_closes, create_features
+from ..features import FEATURE_COLS, build_features_from_closes
 
-from backend.data import fetch_stock_data
+from ..training import MODEL_DIR, train_model_for_ticker
+
 
 router = APIRouter()
-
-MODEL_DIR = "models"
 
 
 class TickerRequest(BaseModel):
@@ -107,80 +103,6 @@ def fetch_latest_closes(ticker: str, window: int) -> list[float]:
         )
 
     return closes[-window:]
-
-
-def train_model_for_ticker(ticker: str) -> dict[str, object]:
-    """
-    Train a new LightGBM model for the given ticker using the same pipeline as the training script.
-    """
-    raw = fetch_stock_data(ticker)
-    df = create_features(raw)
-
-    missing = [c for c in FEATURE_COLS if c not in df.columns]
-    if missing:
-        raise HTTPException(
-            status_code=500, detail=f"Training failed: missing features {missing}"
-        )
-
-    X = df.loc[:, FEATURE_COLS].copy()
-    y = df["target"].copy()
-
-    split = int(len(df) * 0.8)
-    X_train, X_test = X.iloc[:split], X.iloc[split:]
-    y_train, y_test = y.iloc[:split], y.iloc[split:]
-
-    # Using 200 trees and a lower learning rate for better generalization
-    model_obj = LGBMClassifier(
-        n_estimators=50,
-        learning_rate=0.05,
-        num_leaves=7,
-        max_depth=3,
-        min_child_samples=50,
-        reg_alpha=0.1,
-        reg_lambda=0.1,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        random_state=42,
-        verbose=-1,
-    )
-
-    model_obj.fit(X_train, y_train)
-    y_pred = model_obj.predict(X_test)
-    acc = accuracy_score(y_test, y_pred)
-
-    y_train_pred = model_obj.predict(X_train)
-    y_test_pred = model_obj.predict(X_test)
-
-    train_acc = accuracy_score(y_train, y_train_pred)
-    test_acc = accuracy_score(y_test, y_test_pred)
-
-    overfitting_val = train_acc - test_acc
-
-    print(
-        f"TRAIN ACCURACY: {train_acc:.4f}, TEST ACCURACY: {test_acc:.4f}, OVERFITTING VAL: {overfitting_val:.4f}"
-    )
-
-    print(f"SHAPE: X_train: {X_train.shape}, X_test: {X_test.shape}")
-    print(
-        f"IS NAN: X_train: {np.isnan(X_train).sum()}, X_test: {np.isnan(X_test).sum()}"
-    )
-    print(
-        f"MEAN: X_train: {X_train.mean().mean():.4f}, X_test: {X_test.mean().mean():.4f}"
-    )
-
-    artifact_local = {
-        "model": model_obj,
-        "feature_cols": FEATURE_COLS,
-        "ticker": ticker,
-        "accuracy": acc,
-        "overfitting_val": overfitting_val,
-    }
-
-    os.makedirs(MODEL_DIR, exist_ok=True)
-    model_path = os.path.join(MODEL_DIR, f"lgbm_direction_{ticker.upper()}.pkl")
-    joblib.dump(artifact_local, model_path)
-
-    return artifact_local
 
 
 def load_or_train_model(ticker: str) -> dict[str, object]:
