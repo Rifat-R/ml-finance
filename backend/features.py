@@ -116,16 +116,16 @@ def compute_feature_frame_from_returns(
     return pd.DataFrame(out, index=returns.index)
 
 
-def create_features(df: pd.DataFrame, close_col: str = "adjClose") -> pd.DataFrame:
+def create_features(df: pd.DataFrame) -> pd.DataFrame:
     """
     Training features over the full history.
     Outputs columns: FEATURE_COLS + target
     """
     df = df.copy()
 
-    df["return"] = df[close_col].pct_change()
+    df["return"] = df["adjClose"].pct_change()
 
-    feat_df = compute_feature_frame_from_returns(df["return"], df[close_col])
+    feat_df = compute_feature_frame_from_returns(df["return"], df["adjClose"])
     df = df.join(feat_df)
 
     # next-day direction target
