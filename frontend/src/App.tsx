@@ -1,5 +1,13 @@
 import type { FormEvent } from 'react'
 import { useEffect, useState } from 'react'
+import {
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
 
 type PredictorInfo = {
   features_expected: string[]
@@ -24,7 +32,27 @@ type TickerInfo = {
   summary: string | null
 }
 
+type BacktestPoint = {
+  date: string
+  model: number
+  buy_hold: number
+}
+
+type BacktestOverall = {
+  model_return: number
+  buy_hold_return: number
+  curve: BacktestPoint[]
+}
+
+type BacktestResponse = {
+  ticker: string
+  start_year: number
+  end_year: number
+  overall: BacktestOverall
+}
+
 const formatProbability = (value: number) => `${(value * 100).toFixed(1)}%`
+const formatReturn = (value: number) => `${(value * 100).toFixed(1)}%`
 
 type ProgressBarProps = {
   label: string
@@ -69,10 +97,14 @@ function App() {
   const [infoError, setInfoError] = useState<string | null>(null)
   const [prediction, setPrediction] = useState<Prediction | null>(null)
   const [isPredicting, setIsPredicting] = useState<boolean>(false)
+  const [predictError, setPredictError] = useState<string | null>(null)
   const [isLoadingInfo, setIsLoadingInfo] = useState<boolean>(false)
   const [tickerInfo, setTickerInfo] = useState<TickerInfo | null>(null)
   const [tickerInfoError, setTickerInfoError] = useState<string | null>(null)
   const [isLoadingTickerInfo, setIsLoadingTickerInfo] = useState<boolean>(false)
+  const [backtest, setBacktest] = useState<BacktestResponse | null>(null)
+  const [isLoadingBacktest, setIsLoadingBacktest] = useState<boolean>(false)
+  const [backtestError, setBacktestError] = useState<string | null>(null)
 
   const fetchPredictorInfo = async () => {
     setIsLoadingInfo(true)
@@ -119,8 +151,31 @@ function App() {
     }
   }
 
+  const fetchBacktest = async (symbol: string) => {
+    setIsLoadingBacktest(true)
+    setBacktestError(null)
+    try {
+      const response = await fetch(`${apiBase}/backtest-walk-forward?ticker=${encodeURIComponent(symbol)}`)
+      if (!response.ok) {
+        const detail = await response.json().catch(() => ({}))
+        const message = typeof detail.detail === 'string' ? detail.detail : `Backend responded with ${response.status}`
+        throw new Error(message)
+      }
+      const data: BacktestResponse = await response.json()
+      setBacktest(data)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not load backtest data'
+      setBacktestError(message)
+    } finally {
+      setIsLoadingBacktest(false)
+    }
+  }
+
   const requestPrediction = async (endpoint: string, payload: Record<string, unknown>) => {
     setIsPredicting(true)
+    setPredictError(null)
+    setBacktest(null)
+    setBacktestError(null)
     console.log(payload.ticker)
     fetchTickerInfo(payload.ticker as string)
     try {
@@ -138,10 +193,13 @@ function App() {
 
       const data: Prediction = await response.json()
       setPrediction(data)
-
-
+      const symbol = data.ticker ?? (payload.ticker as string)
+      if (symbol) {
+        fetchBacktest(symbol)
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Prediction request failed'
+      setPredictError(message)
     } finally {
       setIsPredicting(false)
     }
@@ -201,6 +259,11 @@ function App() {
                 className="w-full rounded-lg border border-white/10 bg-white/10 px-3 py-3 text-base text-slate-100 shadow-inner shadow-black/20 outline-none ring-1 ring-transparent transition focus:border-cyan-400/70 focus:ring-cyan-400/40"
               />
               <p className="text-sm text-slate-400">Uses the most recent daily closes (default 30-day window) via tiingo.</p>
+              {predictError && (
+                <div className="rounded-lg border border-rose-400/60 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">
+                  {predictError}
+                </div>
+              )}
             </div>
 
             <div className="mt-5 flex flex-wrap items-center gap-3">
@@ -304,6 +367,99 @@ function App() {
             </div>
           </section>
         </div>
+
+        <section className="rounded-2xl border border-white/10 bg-white/5 p-6 shadow-[0_20px_60px_rgba(0,0,0,0.3)] backdrop-blur">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Walk-forward backtest</p>
+              <h2 className="text-xl font-semibold text-slate-50">Model vs Buy &amp; Hold (2018-present)</h2>
+            </div>
+            {backtest && (
+              <span className="text-sm text-slate-400">
+                {backtest.ticker} · {backtest.start_year}-{backtest.end_year}
+              </span>
+            )}
+          </div>
+
+          {isLoadingBacktest && <p className="text-sm text-slate-400">Loading walk-forward results…</p>}
+
+          {!isLoadingBacktest && backtestError && (
+            <div className="rounded-lg border border-rose-400/60 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">
+              {backtestError}
+            </div>
+          )}
+
+          {!isLoadingBacktest && !backtestError && backtest && (
+            <div className="space-y-4">
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-3">
+                  <p className="text-xs uppercase tracking-[0.18em] text-emerald-200">Model total return</p>
+                  <p className="text-2xl font-semibold text-emerald-100">
+                    {formatReturn(backtest.overall.model_return)}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-cyan-400/30 bg-cyan-500/10 px-4 py-3">
+                  <p className="text-xs uppercase tracking-[0.18em] text-cyan-200">Buy &amp; hold total return</p>
+                  <p className="text-2xl font-semibold text-cyan-100">
+                    {formatReturn(backtest.overall.buy_hold_return)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="h-72 w-full rounded-xl border border-white/10 bg-slate-950/50 px-3 py-4">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={backtest.overall.curve} margin={{ top: 8, right: 18, left: 0, bottom: 0 }}>
+                    <XAxis
+                      dataKey="date"
+                      tickFormatter={(value) => String(value).slice(0, 4)}
+                      tick={{ fill: '#94a3b8', fontSize: 12 }}
+                      axisLine={{ stroke: '#1f2937' }}
+                      tickLine={{ stroke: '#1f2937' }}
+                      interval="preserveStartEnd"
+                    />
+                    <YAxis
+                      tickFormatter={(value) => `${value.toFixed(1)}x`}
+                      tick={{ fill: '#94a3b8', fontSize: 12 }}
+                      axisLine={{ stroke: '#1f2937' }}
+                      tickLine={{ stroke: '#1f2937' }}
+                      width={50}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: '#0f172a',
+                        border: '1px solid rgba(148, 163, 184, 0.2)',
+                        borderRadius: '10px',
+                      }}
+                      labelStyle={{ color: '#e2e8f0' }}
+                      formatter={(value: number, name) => [value.toFixed(2), name === 'model' ? 'Model' : 'Buy & Hold']}
+                      labelFormatter={(label) => `Date: ${label}`}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="model"
+                      stroke="#34d399"
+                      strokeWidth={2}
+                      dot={false}
+                      name="Model"
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="buy_hold"
+                      stroke="#22d3ee"
+                      strokeWidth={2}
+                      dot={false}
+                      name="Buy & Hold"
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+
+          {!isLoadingBacktest && !backtestError && !backtest && (
+            <p className="text-sm text-slate-400">Run a prediction to generate the walk-forward backtest.</p>
+          )}
+        </section>
       </div>
     </div>
   )

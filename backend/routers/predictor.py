@@ -40,6 +40,40 @@ class PredictionData(PredictionResponse):
     overfitting_val: float
 
 
+class BacktestPoint(BaseModel):
+    date: str
+    model: float
+    buy_hold: float
+
+
+class BacktestYear(BaseModel):
+    year: int
+    train_start: str
+    train_end: str
+    test_start: str
+    test_end: str
+    train_size: int
+    test_size: int
+    accuracy: float
+    model_return: float
+    buy_hold_return: float
+    curve: list[BacktestPoint]
+
+
+class BacktestOverall(BaseModel):
+    model_return: float
+    buy_hold_return: float
+    curve: list[BacktestPoint]
+
+
+class BacktestResponse(BaseModel):
+    ticker: str
+    start_year: int
+    end_year: int
+    overall: BacktestOverall
+    years: list[BacktestYear]
+
+
 class TickerInfoResponse(BaseModel):
     ticker: str
     name: str | None = None
@@ -105,19 +139,23 @@ def fetch_latest_closes(ticker: str, window: int) -> list[float]:
     return closes[-window:]
 
 
-def load_or_train_model(ticker: str) -> dict[str, object]:
+def load_or_train_model(
+    ticker: str, *, require_backtest: bool = False
+) -> dict[str, object]:
     key = ticker.upper()
 
     disk_path = os.path.join(MODEL_DIR, f"lgbm_direction_{key}.pkl")
     if os.path.exists(disk_path):
         try:
             artifact_local = joblib.load(disk_path)
+            if require_backtest and "walk_forward_overall" not in artifact_local:
+                raise ValueError("Missing walk-forward backtest in artifact")
             return artifact_local
         except Exception:
             # Fall back to retraining if loading fails
             pass
 
-    # Big API request to yFinance
+    # Big API request to tiingo
     artifact_local = train_model_for_ticker(ticker)
     return artifact_local
 
@@ -127,6 +165,33 @@ def predict_info():
     return {
         "features_expected": FEATURE_COLS,
     }
+
+
+@router.get("/backtest-walk-forward", response_model=BacktestResponse)
+def backtest_walk_forward(ticker: str):
+    if not ticker or not ticker.strip():
+        raise HTTPException(status_code=400, detail="Ticker symbol is required.")
+
+    model_entry = load_or_train_model(ticker, require_backtest=True)
+
+    overall = model_entry.get("walk_forward_overall")
+    years = model_entry.get("walk_forward_years")
+    start_year = model_entry.get("walk_forward_start_year")
+    end_year = model_entry.get("walk_forward_end_year")
+
+    if not overall or not years:
+        raise HTTPException(
+            status_code=500,
+            detail="Backtest results missing; retrain the model.",
+        )
+
+    return BacktestResponse(
+        ticker=ticker.strip().upper(),
+        start_year=int(start_year),
+        end_year=int(end_year),
+        overall=overall,
+        years=years,
+    )
 
 
 def _ticker_exists(ticker: str) -> bool:

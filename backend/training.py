@@ -1,5 +1,6 @@
 import os
 import joblib
+from datetime import date
 import numpy as np
 import pandas as pd
 
@@ -8,7 +9,7 @@ from lightgbm import LGBMClassifier
 from sklearn.metrics import accuracy_score
 
 from backend.data import fetch_stock_data
-from .features import FEATURE_COLS, create_features
+from .features import FEATURE_COLS, compute_feature_frame_from_returns
 
 MODEL_DIR = "models"
 
@@ -27,6 +28,31 @@ def _make_model() -> LGBMClassifier:
         random_state=42,
         verbose=-1,
     )
+
+
+def _resolve_close_col(raw: pd.DataFrame) -> str:
+    if "adjClose" in raw.columns:
+        return "adjClose"
+    if "close" in raw.columns:
+        return "close"
+    if "Close" in raw.columns:
+        return "Close"
+    raise HTTPException(status_code=500, detail="No close price column found.")
+
+
+def _build_feature_frame(raw: pd.DataFrame, close_col: str) -> pd.DataFrame:
+    df = raw.copy()
+    df["return"] = df[close_col].pct_change()
+
+    # this adds a column (next_return) where each row contains the percentage change from that day to the next day
+    df["next_return"] = df["return"].shift(-1)
+
+    feat_df = compute_feature_frame_from_returns(df["return"], df[close_col])
+    df = df.join(feat_df)
+    df["target"] = (df["next_return"] > 0).astype(int)
+
+    df = df.dropna(subset=FEATURE_COLS + ["target", "next_return", close_col])
+    return df
 
 
 def walk_forward_evaluate(
@@ -117,13 +143,126 @@ def walk_forward_evaluate(
     }
 
 
+def walk_forward_year_backtest(
+    df: pd.DataFrame,
+    *,
+    start_year: int = 2018,
+    end_year: int | None = None,
+) -> dict[str, object]:
+    if end_year is None:
+        end_year = date.today().year
+
+    if not isinstance(df.index, pd.DatetimeIndex):
+        df = df.copy()
+        df.index = pd.to_datetime(df.index)
+
+    if "next_return" not in df.columns:
+        raise ValueError("Dataframe must include 'next_return' for backtesting.")
+
+    df = df.sort_index()
+    next_dates = df.index.to_series().shift(-1)
+    df = df.assign(next_date=next_dates)
+
+    model_value = 1.0
+    buy_hold_value = 1.0
+    overall_curve: list[dict[str, object]] = []
+    years: list[dict[str, object]] = []
+
+    for year in range(start_year, end_year + 1):
+        train_mask = df.index.year < year
+        test_mask = (df.index.year == year) & (df["next_date"].dt.year == year)
+
+        if not test_mask.any():
+            continue
+
+        if not train_mask.any():
+            raise HTTPException(
+                status_code=500,
+                detail=f"Not enough data to train before {year}.",
+            )
+
+        X_train = df.loc[train_mask, FEATURE_COLS]
+        y_train = df.loc[train_mask, "target"]
+        X_test = df.loc[test_mask, FEATURE_COLS]
+        y_test = df.loc[test_mask, "target"]
+        next_returns = df.loc[test_mask, "next_return"]
+
+        model = _make_model()
+        model.fit(X_train, y_train)
+
+        preds = model.predict(X_test)
+        positions = (preds == 1).astype(float)
+        strat_returns = next_returns.values * positions
+
+        year_model_value = 1.0
+        year_buy_hold_value = 1.0
+        year_curve: list[dict[str, object]] = []
+
+        for date_idx, strat_ret, bh_ret in zip(
+            X_test.index,
+            strat_returns,
+            next_returns.values,
+        ):
+            year_model_value *= 1.0 + float(strat_ret)
+            year_buy_hold_value *= 1.0 + float(bh_ret)
+            model_value *= 1.0 + float(strat_ret)
+            buy_hold_value *= 1.0 + float(bh_ret)
+
+            date_str = date_idx.date().isoformat()
+            year_curve.append(
+                {
+                    "date": date_str,
+                    "model": year_model_value,
+                    "buy_hold": year_buy_hold_value,
+                }
+            )
+            overall_curve.append(
+                {
+                    "date": date_str,
+                    "model": model_value,
+                    "buy_hold": buy_hold_value,
+                }
+            )
+
+        years.append(
+            {
+                "year": year,
+                "train_start": df.loc[train_mask].index[0].date().isoformat(),
+                "train_end": df.loc[train_mask].index[-1].date().isoformat(),
+                "test_start": X_test.index[0].date().isoformat(),
+                "test_end": X_test.index[-1].date().isoformat(),
+                "train_size": len(X_train),
+                "test_size": len(X_test),
+                "accuracy": float(accuracy_score(y_test, preds)),
+                "model_return": float(year_model_value - 1.0),
+                "buy_hold_return": float(year_buy_hold_value - 1.0),
+                "curve": year_curve,
+            }
+        )
+
+    if not years:
+        raise HTTPException(status_code=500, detail="No backtest years available.")
+
+    return {
+        "start_year": start_year,
+        "end_year": end_year,
+        "overall": {
+            "model_return": float(model_value - 1.0),
+            "buy_hold_return": float(buy_hold_value - 1.0),
+            "curve": overall_curve,
+        },
+        "years": years,
+    }
+
+
 def train_model_for_ticker(ticker: str) -> dict[str, object]:
     """
     Train a LightGBM model for the given ticker and evaluate it with walk-forward validation.
     Also fits one final model on all available data for later inference.
     """
     raw = fetch_stock_data(ticker)
-    df = create_features(raw)
+    close_col = _resolve_close_col(raw)
+    df = _build_feature_frame(raw, close_col)
 
     missing = [c for c in FEATURE_COLS if c not in df.columns]
     if missing:
@@ -150,6 +289,8 @@ def train_model_for_ticker(ticker: str) -> dict[str, object]:
         initial_train_size=initial_train_size,
         test_size=test_size,
     )
+
+    year_backtest = walk_forward_year_backtest(df, start_year=2018)
 
     print(
         f"WALK-FORWARD AVG TRAIN ACCURACY: {wf['avg_train_acc']:.4f}, "
@@ -179,6 +320,10 @@ def train_model_for_ticker(ticker: str) -> dict[str, object]:
         "walk_forward_avg_test_accuracy": wf["avg_test_acc"],
         "walk_forward_avg_overfitting_val": wf["avg_overfitting_val"],
         "walk_forward_folds": wf["folds"],
+        "walk_forward_years": year_backtest["years"],
+        "walk_forward_overall": year_backtest["overall"],
+        "walk_forward_start_year": year_backtest["start_year"],
+        "walk_forward_end_year": year_backtest["end_year"],
     }
 
     os.makedirs(MODEL_DIR, exist_ok=True)
