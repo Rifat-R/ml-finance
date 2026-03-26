@@ -134,7 +134,7 @@ def train_model_for_ticker(ticker: str) -> dict[str, object]:
     X = df.loc[:, FEATURE_COLS].copy()
     y = df["target"].copy()
 
-    # Example: first 60% train, then evaluate in 10% chunks
+    # Example: first 60% train, then evaluate in 4, 10% chunks
     n = len(df)
     initial_train_size = int(n * 0.6)
     test_size = int(n * 0.1)

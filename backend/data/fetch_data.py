@@ -3,7 +3,7 @@ from backend.data import tiingo_client
 
 
 def fetch_stock_data(
-    ticker: str, start: str = "2015-01-01", end: str | None = None
+    ticker: str, start: str = "2010-01-01", end: str | None = None
 ) -> pd.DataFrame:
     data = tiingo_client.get_dataframe(
         ticker,
