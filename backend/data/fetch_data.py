@@ -1,6 +1,5 @@
 import pandas as pd
 from backend.data import tiingo_client
-from typing import TypedDict
 
 
 def fetch_stock_data(
@@ -16,14 +15,4 @@ def fetch_stock_data(
     if not isinstance(data, pd.DataFrame):
         raise RuntimeError(f"Data downloaded for {ticker} is not a DataFrame")
 
-    return data
-
-
-class NewsDict(TypedDict):
-    news: str
-    date: str
-
-
-def fetch_news_data(ticker: str) -> NewsDict:
-    data: NewsDict = {"news": "example news headline", "date": "2024-01-01"}
     return data
