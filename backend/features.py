@@ -116,27 +116,6 @@ def compute_feature_frame_from_returns(
     return pd.DataFrame(out, index=returns.index)
 
 
-def create_features(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Training features over the full history.
-    Outputs columns: FEATURE_COLS + target
-    """
-    df = df.copy()
-
-    df["return"] = df["adjClose"].pct_change()
-
-    feat_df = compute_feature_frame_from_returns(df["return"], df["adjClose"])
-    df = df.join(feat_df)
-
-    # next-day direction target
-    df["target"] = (df["return"].shift(-1) > 0).astype(int)
-
-    # drop rows where any feature/target is NaN (initial rolling + last target)
-    df = df.dropna(subset=FEATURE_COLS + ["target"])
-
-    return df[FEATURE_COLS + ["target"]].copy()
-
-
 def build_features_from_closes(closes: Sequence[float]) -> pd.DataFrame:
     closes_arr = np.asarray(closes, dtype=float)
     closes_series = pd.Series(closes_arr)
