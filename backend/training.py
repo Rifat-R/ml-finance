@@ -9,7 +9,7 @@ from lightgbm import LGBMClassifier
 from sklearn.metrics import accuracy_score
 
 from backend.data import fetch_stock_data
-from .features import FEATURE_COLS, compute_feature_frame_from_returns
+from .features import FEATURE_COLS, FEATURES
 
 MODEL_DIR = "models"
 TRADING_DAYS_PER_YEAR = 252
@@ -53,15 +53,28 @@ def _make_model() -> LGBMClassifier:
     )
 
 
+def _compute_feature_frame_from_returns(
+    returns: pd.Series,
+    closes: pd.Series,
+) -> pd.DataFrame:
+    """Compute all feature columns for every timestamp in `returns`."""
+    out = {}
+    for f in FEATURES:
+        out[f.name] = f.compute_series(returns, closes)
+    return pd.DataFrame(out, index=returns.index)
+
+
 def _build_feature_frame(raw: pd.DataFrame, close_col: str) -> pd.DataFrame:
     df = raw.copy()
+    print(df.columns)
+    print(df.index)
     df["return"] = df[close_col].pct_change()
 
     # this adds a column (next_return) where each row contains the percentage change from that day to the next day
     df["next_return"] = df["return"].shift(-1)
 
-    feat_df = compute_feature_frame_from_returns(df["return"], df[close_col])
-    df = df.join(feat_df)
+    feat_df_returns = _compute_feature_frame_from_returns(df["return"], df[close_col])
+    df = df.join(feat_df_returns)
     df["target"] = (df["next_return"] > 0).astype(int)
 
     df = df.dropna(subset=FEATURE_COLS + ["target", "next_return", close_col])

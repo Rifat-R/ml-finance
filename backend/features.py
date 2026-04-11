@@ -105,17 +105,6 @@ FEATURES: list[Feature] = [
 FEATURE_COLS: list[str] = [f.name for f in FEATURES]
 
 
-def compute_feature_frame_from_returns(
-    returns: pd.Series,
-    closes: pd.Series,
-) -> pd.DataFrame:
-    """Compute all feature columns for every timestamp in `returns`."""
-    out = {}
-    for f in FEATURES:
-        out[f.name] = f.compute_series(returns, closes)
-    return pd.DataFrame(out, index=returns.index)
-
-
 def build_features_from_closes(closes: Sequence[float]) -> pd.DataFrame:
     closes_arr = np.asarray(closes, dtype=float)
     closes_series = pd.Series(closes_arr)
