@@ -53,16 +53,6 @@ def _make_model() -> LGBMClassifier:
     )
 
 
-def _resolve_close_col(raw: pd.DataFrame) -> str:
-    if "adjClose" in raw.columns:
-        return "adjClose"
-    if "close" in raw.columns:
-        return "close"
-    if "Close" in raw.columns:
-        return "Close"
-    raise HTTPException(status_code=500, detail="No close price column found.")
-
-
 def _build_feature_frame(raw: pd.DataFrame, close_col: str) -> pd.DataFrame:
     df = raw.copy()
     df["return"] = df[close_col].pct_change()
@@ -300,8 +290,7 @@ def train_model_for_ticker(ticker: str) -> dict[str, object]:
     Also fits one final model on all available data for later inference.
     """
     raw = fetch_stock_data(ticker)
-    close_col = _resolve_close_col(raw)
-    df = _build_feature_frame(raw, close_col)
+    df = _build_feature_frame(raw, "adjClose")
 
     missing = [c for c in FEATURE_COLS if c not in df.columns]
     if missing:
