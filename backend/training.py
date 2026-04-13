@@ -4,6 +4,7 @@ import joblib
 from datetime import date
 import numpy as np
 import pandas as pd
+from backend.news.semantic_analysis import semantic_feature_series
 
 from fastapi import HTTPException
 from lightgbm import LGBMClassifier
@@ -318,6 +319,7 @@ def train_model_for_ticker(ticker: str) -> dict[str, object]:
     """
     raw = fetch_stock_data(ticker)
     df = _build_feature_frame(raw, "adjClose")
+    df["semantic_sentiment"] = semantic_feature_series(ticker)
 
     missing = [c for c in FEATURE_COLS if c not in df.columns]
     if missing:
