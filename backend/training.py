@@ -1,4 +1,5 @@
 import os
+from typing import TypedDict
 import joblib
 from datetime import date
 import numpy as np
@@ -81,6 +82,19 @@ def _build_feature_frame(raw: pd.DataFrame, close_col: str) -> pd.DataFrame:
     return df
 
 
+class FoldMetrics(TypedDict):
+    fold: int
+    train_start: str | int
+    train_end: str | int
+    test_start: str | int
+    test_end: str | int
+    train_size: int
+    test_size: int
+    train_acc: float
+    test_acc: float
+    overfitting_val: float
+
+
 def walk_forward_evaluate(
     X: pd.DataFrame,
     y: pd.Series,
@@ -109,7 +123,7 @@ def walk_forward_evaluate(
     if initial_train_size + test_size > n:
         raise ValueError("Not enough data for even one walk-forward fold.")
 
-    folds: list[dict[str, object]] = []
+    folds: list[FoldMetrics] = []
 
     train_end = initial_train_size
     fold_num = 1
