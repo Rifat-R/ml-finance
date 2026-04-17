@@ -208,3 +208,9 @@ __marimo__/
 
 # Pickle files
 *.pkl
+
+# misc
+
+financial-news/
+*.parquet
+*.duckdb
