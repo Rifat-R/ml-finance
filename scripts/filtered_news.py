@@ -9,6 +9,7 @@ df = con.execute("""
 SELECT *
 FROM read_parquet('filtered_news.parquet')
 WHERE list_contains(stocks, 'WMT')
+ORDER BY date DESC
 LIMIT 50
 """).df()
 
@@ -29,7 +30,6 @@ for index, row in df.iterrows():
 total_count = con.execute(f"""
 SELECT COUNT(*) AS total_count
 FROM read_parquet('filtered_news.parquet')
-WHERE list_contains(stocks, '{TICKER}')
 """).fetchone()[0]
 
 print(f"Total filtered news articles for {TICKER}: {total_count:,}")

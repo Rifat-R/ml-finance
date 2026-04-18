@@ -6,8 +6,8 @@ import duckdb
 DATASET_DIR = "./financial-news"  # path from snapshot_download
 OUTPUT_FILE = "./filtered_news.parquet"
 
-START_DATE = "2015-01-01"
-END_DATE = "2023-12-31"
+START_DATE = "2020-06-01"
+END_DATE = "2023-06-01"
 
 # Choose which date to use:
 USE_TRADING_DATE = False  # True = use extra_fields.date_trading
@@ -39,9 +39,8 @@ COPY (
         json_extract_string(extra_fields, '$.url') AS url,
         from_json(json_extract(extra_fields, '$.stocks'), '["VARCHAR"]') AS stocks
     FROM read_parquet('{parquet_glob}')
-    WHERE {date_expr} BETWEEN TIMESTAMP '{START_DATE}'
-                          AND TIMESTAMP '{END_DATE}'
-                          AND json_extract(extra_fields, '$.stocks') IS NOT NULL
+    WHERE {date_expr} BETWEEN TIMESTAMP '{START_DATE}' AND TIMESTAMP '{END_DATE}'
+        AND json_extract(extra_fields, '$.stocks') IS NOT NULL
 ) TO '{OUTPUT_FILE}' (FORMAT PARQUET);
 """
 

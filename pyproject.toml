@@ -48,3 +48,8 @@ reportUntypedFunctionDecorator = "none"
 reportUnnecessaryTypeIgnoreComment = "warning"
 reportUnboundVariable = "error"
 reportUnusedImport = "warning"
+
+[dependency-groups]
+dev = [
+    "matplotlib>=3.10.8",
+]
