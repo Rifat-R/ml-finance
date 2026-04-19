@@ -5,6 +5,7 @@ description = "Dissertation project for machine learning in finance."
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "datasets>=4.8.4",
     "dotenv>=0.9.9",
     "duckdb>=1.5.2",
     "fastapi>=0.135.1",
