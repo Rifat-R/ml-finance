@@ -212,5 +212,4 @@ __marimo__/
 # misc
 
 financial-news/
-*.parquet
 *.duckdb
