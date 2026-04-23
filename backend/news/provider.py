@@ -1,6 +1,8 @@
-from backend.news.types import NewsDict
+import pandas as pd
+
+DF = pd.read_parquet("data/news_features.parquet")
 
 
-def fetch_news_data(ticker: str) -> list[NewsDict]:
-    data: list[NewsDict] = [{"news": "example news headline", "date": "2024-01-01"}]
-    return data
+def load_news_sentiment_features(ticker: str) -> pd.DataFrame:
+    ticker_df = DF[DF["ticker"] == ticker]
+    return ticker_df

@@ -66,7 +66,8 @@ def _compute_feature_frame_from_returns(
     return pd.DataFrame(out, index=returns.index)
 
 
-def _build_feature_frame(raw: pd.DataFrame, close_col: str) -> pd.DataFrame:
+def _build_feature_frame(ticker: str, close_col: str) -> pd.DataFrame:
+    raw = fetch_stock_data(ticker)
     df = raw.copy()
     print(df.columns)
     print(df.index)
@@ -317,9 +318,7 @@ def train_model_for_ticker(ticker: str) -> dict[str, object]:
     Train a LightGBM model for the given ticker and evaluate it with walk-forward validation.
     Also fits one final model on all available data for later inference.
     """
-    raw = fetch_stock_data(ticker)
-    df = _build_feature_frame(raw, "adjClose")
-    df["semantic_sentiment"] = semantic_feature_series(ticker)
+    df = _build_feature_frame(ticker, "adjClose")
 
     missing = [c for c in FEATURE_COLS if c not in df.columns]
     if missing:
