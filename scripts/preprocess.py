@@ -1,7 +1,13 @@
 import duckdb
 import pandas as pd
-from backend.news.semantic_analysis import classifier
 from tqdm import tqdm
+from transformers import pipeline
+
+classifier = pipeline(
+    "text-classification",
+    model="ProsusAI/finbert",
+    tokenizer="ProsusAI/finbert",
+)
 
 con = duckdb.connect()
 

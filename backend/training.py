@@ -4,7 +4,6 @@ import joblib
 from datetime import date
 import numpy as np
 import pandas as pd
-from backend.news.provider import load_news_sentiment_features
 
 from fastapi import HTTPException
 from lightgbm import LGBMClassifier
@@ -80,7 +79,16 @@ def _build_price_feature_frame(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _build_semantic_feature_frame(ticker: str) -> pd.DataFrame:
-    return load_news_sentiment_features(ticker).set_index("date").sort_index()
+    news_features_df = pd.read_parquet("data/news_features.parquet")
+    df = (
+        news_features_df[news_features_df["ticker"] == ticker]
+        .drop(columns=["ticker"])
+        .copy()
+    )
+    df["date"] = pd.to_datetime(df["date"]).dt.normalize()
+    df = df.set_index("date").sort_index()
+    df = df.fillna(0)
+    return df
 
 
 def _build_base_frame(ticker: str) -> pd.DataFrame:
