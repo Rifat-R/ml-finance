@@ -48,3 +48,11 @@ ORDER BY freq DESC
 """).df()
 
 print(df)
+
+df = con.execute("""
+SELECT *
+FROM read_parquet('news_features.parquet')
+WHERE ticker = 'AAPL'
+""").df()
+
+print(df)

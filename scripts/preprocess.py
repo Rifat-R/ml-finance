@@ -22,7 +22,7 @@ for i in tqdm(range(0, len(texts), 16)):
     batch_results = classifier(
         batch_texts,
         truncation=True,
-        max_length=512,
+        max_length=256,
     )
     results.extend(batch_results)
 
