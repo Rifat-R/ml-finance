@@ -4,7 +4,7 @@ import joblib
 from datetime import date
 import numpy as np
 import pandas as pd
-from backend.news.semantic_analysis import semantic_feature_series
+from backend.news.provider import load_news_sentiment_features
 
 from fastapi import HTTPException
 from lightgbm import LGBMClassifier
@@ -55,7 +55,7 @@ def _make_model() -> LGBMClassifier:
     )
 
 
-def _compute_feature_frame_from_returns(
+def _compute_price_features(
     returns: pd.Series,
     closes: pd.Series,
 ) -> pd.DataFrame:
@@ -66,22 +66,39 @@ def _compute_feature_frame_from_returns(
     return pd.DataFrame(out, index=returns.index)
 
 
-def _build_feature_frame(ticker: str, close_col: str) -> pd.DataFrame:
-    raw = fetch_stock_data(ticker)
-    df = raw.copy()
-    print(df.columns)
-    print(df.index)
-    df["return"] = df[close_col].pct_change()
+def _build_price_feature_frame(df: pd.DataFrame) -> pd.DataFrame:
+    CLOSE_COL = "adjClose"
+    feat_df_returns = _compute_price_features(df["return"], df["adjClose"])
 
-    # this adds a column (next_return) where each row contains the percentage change from that day to the next day
+    merged_df = df.join(feat_df_returns)
+    merged_df["target"] = (merged_df["next_return"] > 0).astype(int)
+
+    merged_df = merged_df.dropna(
+        subset=FEATURE_COLS + ["target", "next_return", CLOSE_COL]
+    )
+    return merged_df
+
+
+def _build_semantic_feature_frame(ticker: str) -> pd.DataFrame:
+    return load_news_sentiment_features(ticker).set_index("date").sort_index()
+
+
+def _build_base_frame(ticker: str) -> pd.DataFrame:
+    """Fetch stock data and compute price related features and target variable."""
+    df = fetch_stock_data(ticker)
+    df["return"] = df["adjClose"].pct_change()
     df["next_return"] = df["return"].shift(-1)
 
-    feat_df_returns = _compute_feature_frame_from_returns(df["return"], df[close_col])
-    df = df.join(feat_df_returns)
-    df["target"] = (df["next_return"] > 0).astype(int)
-
-    df = df.dropna(subset=FEATURE_COLS + ["target", "next_return", close_col])
+    df = _build_price_feature_frame(df)
     return df
+
+
+def _build_feature_frame(ticker: str) -> pd.DataFrame:
+    base_df = _build_base_frame(ticker)
+    semantic_df = _build_semantic_feature_frame(ticker)
+
+    merged_df = base_df.join(semantic_df, how="left")
+    return merged_df
 
 
 class FoldMetrics(TypedDict):
@@ -318,7 +335,7 @@ def train_model_for_ticker(ticker: str) -> dict[str, object]:
     Train a LightGBM model for the given ticker and evaluate it with walk-forward validation.
     Also fits one final model on all available data for later inference.
     """
-    df = _build_feature_frame(ticker, "adjClose")
+    df = _build_feature_frame(ticker)
 
     missing = [c for c in FEATURE_COLS if c not in df.columns]
     if missing:
