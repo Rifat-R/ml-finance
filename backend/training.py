@@ -88,7 +88,6 @@ def _build_sentiment_feature_frame(ticker: str) -> pd.DataFrame:
     df["date"] = pd.to_datetime(df["date"]).dt.normalize()
     df = df.set_index("date").sort_index()
 
-    df = df.fillna(0)
     return df
 
 
@@ -109,6 +108,7 @@ def _build_feature_frame(ticker: str) -> pd.DataFrame:
 
     sentiment_cols = sentiment_df.columns
     merged_df[sentiment_cols] = merged_df[sentiment_cols].shift(1)
+    merged_df[sentiment_cols] = merged_df[sentiment_cols].fillna(0)
 
     return merged_df
 
