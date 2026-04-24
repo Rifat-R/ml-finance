@@ -78,7 +78,7 @@ def _build_price_feature_frame(df: pd.DataFrame) -> pd.DataFrame:
     return merged_df
 
 
-def _build_semantic_feature_frame(ticker: str) -> pd.DataFrame:
+def _build_sentiment_feature_frame(ticker: str) -> pd.DataFrame:
     news_features_df = pd.read_parquet("data/news_features.parquet")
     df = (
         news_features_df[news_features_df["ticker"] == ticker]
@@ -87,6 +87,7 @@ def _build_semantic_feature_frame(ticker: str) -> pd.DataFrame:
     )
     df["date"] = pd.to_datetime(df["date"]).dt.normalize()
     df = df.set_index("date").sort_index()
+
     df = df.fillna(0)
     return df
 
@@ -103,9 +104,12 @@ def _build_base_frame(ticker: str) -> pd.DataFrame:
 
 def _build_feature_frame(ticker: str) -> pd.DataFrame:
     base_df = _build_base_frame(ticker)
-    semantic_df = _build_semantic_feature_frame(ticker)
+    sentiment_df = _build_sentiment_feature_frame(ticker)
+    merged_df = base_df.join(sentiment_df, how="left")
 
-    merged_df = base_df.join(semantic_df, how="left")
+    sentiment_cols = sentiment_df.columns
+    merged_df[sentiment_cols] = merged_df[sentiment_cols].shift(1)
+
     return merged_df
 
 
