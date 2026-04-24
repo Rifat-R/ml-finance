@@ -5,6 +5,15 @@ from collections.abc import Sequence
 import numpy as np
 import pandas as pd
 
+from backend.data.fetch_data import fetch_stock_data
+
+SENTIMENT_FEATURE_COLS = [
+    "mean_sentiment",
+    "article_count",
+    "sum_sentiment",
+    "positive_ratio",
+]
+
 
 class Feature(ABC):
     @property
@@ -104,6 +113,18 @@ FEATURES: list[Feature] = [
 
 PRICE_FEATURE_COLS: list[str] = [f.name for f in FEATURES]
 
+FEATURE_COLS = SENTIMENT_FEATURE_COLS + PRICE_FEATURE_COLS
+
+
+def build_feature_frame(ticker: str) -> pd.DataFrame:
+    base_df = _build_base_frame(ticker)
+    sentiment_df = _build_sentiment_feature_frame(ticker)
+    merged_df = base_df.join(sentiment_df, how="left")
+    merged_df[SENTIMENT_FEATURE_COLS] = merged_df[SENTIMENT_FEATURE_COLS].shift(1)
+    merged_df[SENTIMENT_FEATURE_COLS] = merged_df[SENTIMENT_FEATURE_COLS].fillna(0)
+
+    return merged_df
+
 
 def build_features_from_closes(closes: Sequence[float]) -> pd.DataFrame:
     closes_arr = np.asarray(closes, dtype=float)
@@ -118,4 +139,50 @@ def build_features_from_closes(closes: Sequence[float]) -> pd.DataFrame:
     returns = closes_series.pct_change()
 
     row = {f.name: f.compute_last(returns, closes_series) for f in FEATURES}
-    return pd.DataFrame([row], columns=FEATURE_COLS)
+    return pd.DataFrame([row], columns=PRICE_FEATURE_COLS)
+
+
+def _compute_price_features(
+    returns: pd.Series,
+    closes: pd.Series,
+) -> pd.DataFrame:
+    """Compute all feature columns for every timestamp in `returns`."""
+    out = {}
+    for f in FEATURES:
+        out[f.name] = f.compute_series(returns, closes)
+    return pd.DataFrame(out, index=returns.index)
+
+
+def _build_price_feature_frame(df: pd.DataFrame) -> pd.DataFrame:
+    feat_df_returns = _compute_price_features(df["return"], df["adjClose"])
+
+    merged_df = df.join(feat_df_returns)
+    merged_df["target"] = (merged_df["next_return"] > 0).astype(int)
+
+    merged_df = merged_df.dropna(
+        subset=PRICE_FEATURE_COLS + ["target", "next_return", "adjClose"]
+    )
+    return merged_df
+
+
+def _build_sentiment_feature_frame(ticker: str) -> pd.DataFrame:
+    news_features_df = pd.read_parquet("data/news_features.parquet")
+    df = (
+        news_features_df[news_features_df["ticker"] == ticker]
+        .drop(columns=["ticker"])
+        .copy()
+    )
+    df["date"] = pd.to_datetime(df["date"]).dt.normalize()
+    df = df.set_index("date").sort_index()
+
+    return df
+
+
+def _build_base_frame(ticker: str) -> pd.DataFrame:
+    """Fetch stock data and compute price related features and target variable."""
+    df = fetch_stock_data(ticker)
+    df["return"] = df["adjClose"].pct_change()
+    df["next_return"] = df["return"].shift(-1)
+
+    df = _build_price_feature_frame(df)
+    return df

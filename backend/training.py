@@ -9,17 +9,8 @@ from fastapi import HTTPException
 from lightgbm import LGBMClassifier
 from sklearn.metrics import accuracy_score
 
-from backend.data import fetch_stock_data
-from .features import PRICE_FEATURE_COLS, FEATURES
+from .features import FEATURE_COLS, build_feature_frame
 
-SENTIMENT_FEATURE_COLS = [
-    "mean_sentiment",
-    "article_count",
-    "sum_sentiment",
-    "positive_ratio",
-]
-
-FEATURE_COLS = SENTIMENT_FEATURE_COLS + PRICE_FEATURE_COLS
 
 MODEL_DIR = "models"
 TRADING_DAYS_PER_YEAR = 252
@@ -61,62 +52,6 @@ def _make_model() -> LGBMClassifier:
         random_state=42,
         verbose=-1,
     )
-
-
-def _compute_price_features(
-    returns: pd.Series,
-    closes: pd.Series,
-) -> pd.DataFrame:
-    """Compute all feature columns for every timestamp in `returns`."""
-    out = {}
-    for f in FEATURES:
-        out[f.name] = f.compute_series(returns, closes)
-    return pd.DataFrame(out, index=returns.index)
-
-
-def _build_price_feature_frame(df: pd.DataFrame) -> pd.DataFrame:
-    feat_df_returns = _compute_price_features(df["return"], df["adjClose"])
-
-    merged_df = df.join(feat_df_returns)
-    merged_df["target"] = (merged_df["next_return"] > 0).astype(int)
-
-    merged_df = merged_df.dropna(
-        subset=PRICE_FEATURE_COLS + ["target", "next_return", "adjClose"]
-    )
-    return merged_df
-
-
-def _build_sentiment_feature_frame(ticker: str) -> pd.DataFrame:
-    news_features_df = pd.read_parquet("data/news_features.parquet")
-    df = (
-        news_features_df[news_features_df["ticker"] == ticker]
-        .drop(columns=["ticker"])
-        .copy()
-    )
-    df["date"] = pd.to_datetime(df["date"]).dt.normalize()
-    df = df.set_index("date").sort_index()
-
-    return df
-
-
-def _build_base_frame(ticker: str) -> pd.DataFrame:
-    """Fetch stock data and compute price related features and target variable."""
-    df = fetch_stock_data(ticker)
-    df["return"] = df["adjClose"].pct_change()
-    df["next_return"] = df["return"].shift(-1)
-
-    df = _build_price_feature_frame(df)
-    return df
-
-
-def _build_feature_frame(ticker: str) -> pd.DataFrame:
-    base_df = _build_base_frame(ticker)
-    sentiment_df = _build_sentiment_feature_frame(ticker)
-    merged_df = base_df.join(sentiment_df, how="left")
-    merged_df[SENTIMENT_FEATURE_COLS] = merged_df[SENTIMENT_FEATURE_COLS].shift(1)
-    merged_df[SENTIMENT_FEATURE_COLS] = merged_df[SENTIMENT_FEATURE_COLS].fillna(0)
-
-    return merged_df
 
 
 class FoldMetrics(TypedDict):
@@ -353,7 +288,7 @@ def train_model_for_ticker(ticker: str) -> dict[str, object]:
     Train a LightGBM model for the given ticker and evaluate it with walk-forward validation.
     Also fits one final model on all available data for later inference.
     """
-    df = _build_feature_frame(ticker)
+    df = build_feature_frame(ticker)
 
     X = df.loc[:, FEATURE_COLS].copy()
     y = df["target"].copy()
