@@ -10,7 +10,16 @@ from lightgbm import LGBMClassifier
 from sklearn.metrics import accuracy_score
 
 from backend.data import fetch_stock_data
-from .features import FEATURE_COLS, FEATURES
+from .features import PRICE_FEATURE_COLS, FEATURES
+
+SENTIMENT_FEATURE_COLS = [
+    "mean_sentiment",
+    "article_count",
+    "sum_sentiment",
+    "positive_ratio",
+]
+
+FEATURE_COLS = SENTIMENT_FEATURE_COLS + PRICE_FEATURE_COLS
 
 MODEL_DIR = "models"
 TRADING_DAYS_PER_YEAR = 252
@@ -66,14 +75,13 @@ def _compute_price_features(
 
 
 def _build_price_feature_frame(df: pd.DataFrame) -> pd.DataFrame:
-    CLOSE_COL = "adjClose"
     feat_df_returns = _compute_price_features(df["return"], df["adjClose"])
 
     merged_df = df.join(feat_df_returns)
     merged_df["target"] = (merged_df["next_return"] > 0).astype(int)
 
     merged_df = merged_df.dropna(
-        subset=FEATURE_COLS + ["target", "next_return", CLOSE_COL]
+        subset=PRICE_FEATURE_COLS + ["target", "next_return", "adjClose"]
     )
     return merged_df
 
@@ -105,10 +113,8 @@ def _build_feature_frame(ticker: str) -> pd.DataFrame:
     base_df = _build_base_frame(ticker)
     sentiment_df = _build_sentiment_feature_frame(ticker)
     merged_df = base_df.join(sentiment_df, how="left")
-
-    sentiment_cols = sentiment_df.columns
-    merged_df[sentiment_cols] = merged_df[sentiment_cols].shift(1)
-    merged_df[sentiment_cols] = merged_df[sentiment_cols].fillna(0)
+    merged_df[SENTIMENT_FEATURE_COLS] = merged_df[SENTIMENT_FEATURE_COLS].shift(1)
+    merged_df[SENTIMENT_FEATURE_COLS] = merged_df[SENTIMENT_FEATURE_COLS].fillna(0)
 
     return merged_df
 
@@ -348,12 +354,6 @@ def train_model_for_ticker(ticker: str) -> dict[str, object]:
     Also fits one final model on all available data for later inference.
     """
     df = _build_feature_frame(ticker)
-
-    missing = [c for c in FEATURE_COLS if c not in df.columns]
-    if missing:
-        raise HTTPException(
-            status_code=500, detail=f"Training failed: missing features {missing}"
-        )
 
     X = df.loc[:, FEATURE_COLS].copy()
     y = df["target"].copy()

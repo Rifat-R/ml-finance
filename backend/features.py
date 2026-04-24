@@ -102,7 +102,7 @@ FEATURES: list[Feature] = [
     RSI(14),
 ]
 
-FEATURE_COLS: list[str] = [f.name for f in FEATURES]
+PRICE_FEATURE_COLS: list[str] = [f.name for f in FEATURES]
 
 
 def build_features_from_closes(closes: Sequence[float]) -> pd.DataFrame:
