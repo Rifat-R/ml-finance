@@ -11,6 +11,7 @@ dependencies = [
     "fastapi>=0.135.1",
     "joblib>=1.5.3",
     "lightgbm>=4.6.0",
+    "newsapi-python>=0.2.7",
     "numpy>=2.4.2",
     "pandas>=3.0.1",
     "pandas-stubs>=3.0.0.260204",

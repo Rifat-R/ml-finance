@@ -7,6 +7,8 @@ import pandas as pd
 
 from backend.data.fetch_data import fetch_stock_data
 
+NEWS_FEATURES_PATH = "data/news_features.parquet"
+
 SENTIMENT_FEATURE_COLS = [
     "mean_sentiment",
     "article_count",
@@ -166,12 +168,13 @@ def _build_price_feature_frame(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _build_sentiment_feature_frame(ticker: str) -> pd.DataFrame:
-    news_features_df = pd.read_parquet("data/news_features.parquet")
+    news_features_df = pd.read_parquet(NEWS_FEATURES_PATH)
     df = (
         news_features_df[news_features_df["ticker"] == ticker]
         .drop(columns=["ticker"])
         .copy()
     )
+
     df["date"] = pd.to_datetime(df["date"]).dt.normalize()
     df = df.set_index("date").sort_index()
 
