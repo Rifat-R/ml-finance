@@ -50,6 +50,8 @@ class PredictionData(PredictionResponse):
     closes_used: list[float]
     accuracy: float
     overfitting_val: float
+    worst_overfitting_val: float | None = None
+    overfitting_std: float | None = None
     sentiment_features: dict[str, float]
 
 
@@ -305,6 +307,10 @@ def load_or_train_model(ticker: str) -> dict[str, object]:
                 raise ValueError("Missing walk-forward overall backtest in artifact")
             if not artifact_local.get("walk_forward_years"):
                 raise ValueError("Missing walk-forward yearly backtest in artifact")
+            if "worst_overfitting_val" not in artifact_local:
+                raise ValueError("Missing worst overfitting metric in artifact")
+            if "overfitting_std" not in artifact_local:
+                raise ValueError("Missing overfitting std metric in artifact")
             return artifact_local
         except Exception:
             # Fall back to retraining if loading fails
@@ -412,6 +418,8 @@ def predict_direction_from_ticker(request: TickerRequest):
 
     accuracy = model_entry.get("accuracy", 0.0)
     overfitting_val = model_entry.get("overfitting_val", 0.0)
+    worst_overfitting_val = model_entry.get("worst_overfitting_val")
+    overfitting_std = model_entry.get("overfitting_std")
 
     print(f"ACCURACY FROM PREDICT DIRECTION FROM TICKER: {model_entry.get('accuracy')}")
 
@@ -420,6 +428,8 @@ def predict_direction_from_ticker(request: TickerRequest):
         closes_used=closes,
         accuracy=accuracy,  # type: ignore
         overfitting_val=overfitting_val,  # type: ignore
+        worst_overfitting_val=worst_overfitting_val,  # type: ignore
+        overfitting_std=overfitting_std,  # type: ignore
         sentiment_features=sentiment_features,
         **base_prediction.model_dump(),
     )

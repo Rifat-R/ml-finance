@@ -40,15 +40,15 @@ def _compute_annualized_sharpe(
 
 def _make_model() -> LGBMClassifier:
     return LGBMClassifier(
-        n_estimators=50,
-        learning_rate=0.05,
-        num_leaves=7,
-        max_depth=3,
-        min_child_samples=50,
-        reg_alpha=0.1,
-        reg_lambda=0.1,
-        subsample=0.8,
-        colsample_bytree=0.8,
+        n_estimators=35,
+        learning_rate=0.03,
+        num_leaves=5,
+        max_depth=2,
+        min_child_samples=100,
+        reg_alpha=0.5,
+        reg_lambda=1.0,
+        subsample=0.7,
+        colsample_bytree=0.7,
         random_state=42,
         verbose=-1,
     )
@@ -146,12 +146,16 @@ def walk_forward_evaluate(
     avg_train_acc = float(np.mean([f["train_acc"] for f in folds]))
     avg_test_acc = float(np.mean([f["test_acc"] for f in folds]))
     avg_overfitting = float(np.mean([f["overfitting_val"] for f in folds]))
+    worst_overfitting = float(np.max([f["overfitting_val"] for f in folds]))
+    overfitting_std = float(np.std([f["overfitting_val"] for f in folds]))
 
     return {
         "folds": folds,
         "avg_train_acc": avg_train_acc,
         "avg_test_acc": avg_test_acc,
         "avg_overfitting_val": avg_overfitting,
+        "worst_overfitting_val": worst_overfitting,
+        "overfitting_std": overfitting_std,
     }
 
 
@@ -336,7 +340,9 @@ def train_model_for_ticker(ticker: str) -> dict[str, object]:
     print(
         f"WALK-FORWARD AVG TRAIN ACCURACY: {wf['avg_train_acc']:.4f}, "
         f"AVG TEST ACCURACY: {wf['avg_test_acc']:.4f}, "
-        f"AVG OVERFITTING VAL: {wf['avg_overfitting_val']:.4f}"
+        f"AVG OVERFITTING VAL: {wf['avg_overfitting_val']:.4f}, "
+        f"WORST OVERFITTING VAL: {wf['worst_overfitting_val']:.4f}, "
+        f"OVERFITTING STD: {wf['overfitting_std']:.4f}"
     )
 
     for fold in wf["folds"]:
@@ -357,9 +363,13 @@ def train_model_for_ticker(ticker: str) -> dict[str, object]:
         "ticker": ticker,
         "accuracy": wf["avg_test_acc"],
         "overfitting_val": wf["avg_overfitting_val"],
+        "worst_overfitting_val": wf["worst_overfitting_val"],
+        "overfitting_std": wf["overfitting_std"],
         "walk_forward_avg_train_accuracy": wf["avg_train_acc"],
         "walk_forward_avg_test_accuracy": wf["avg_test_acc"],
         "walk_forward_avg_overfitting_val": wf["avg_overfitting_val"],
+        "walk_forward_worst_overfitting_val": wf["worst_overfitting_val"],
+        "walk_forward_overfitting_std": wf["overfitting_std"],
         "walk_forward_folds": wf["folds"],
         "walk_forward_years": year_backtest["years"],
         "walk_forward_overall": year_backtest["overall"],
