@@ -121,6 +121,10 @@ FEATURE_COLS = SENTIMENT_FEATURE_COLS + PRICE_FEATURE_COLS
 def build_feature_frame(ticker: str) -> pd.DataFrame:
     base_df = _build_base_frame(ticker)
     sentiment_df = _build_sentiment_feature_frame(ticker)
+
+    start = sentiment_df.index.min()
+    end = sentiment_df.index.max()
+    base_df = base_df.loc[(base_df.index >= start) & (base_df.index <= end)]
     merged_df = base_df.join(sentiment_df, how="left")
     merged_df[SENTIMENT_FEATURE_COLS] = merged_df[SENTIMENT_FEATURE_COLS].shift(1)
     merged_df[SENTIMENT_FEATURE_COLS] = merged_df[SENTIMENT_FEATURE_COLS].fillna(0)
