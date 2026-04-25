@@ -7,7 +7,7 @@ import pandas as pd
 
 from backend.data.fetch_data import fetch_stock_data
 
-NEWS_FEATURES_PATH = "data/news_features.parquet"
+NEWS_FEATURES_PATH = "backend/data/news_features.parquet"
 
 SENTIMENT_FEATURE_COLS = [
     "mean_sentiment",
@@ -132,7 +132,9 @@ def build_feature_frame(ticker: str) -> pd.DataFrame:
     return merged_df
 
 
-def build_features_from_closes(closes: Sequence[float]) -> pd.DataFrame:
+def build_features_from_closes(
+    closes: Sequence[float], sentiment_features: dict[str, float] | None = None
+) -> pd.DataFrame:
     closes_arr = np.asarray(closes, dtype=float)
     closes_series = pd.Series(closes_arr)
 
@@ -145,7 +147,13 @@ def build_features_from_closes(closes: Sequence[float]) -> pd.DataFrame:
     returns = closes_series.pct_change()
 
     row = {f.name: f.compute_last(returns, closes_series) for f in FEATURES}
-    return pd.DataFrame([row], columns=PRICE_FEATURE_COLS)
+
+    sentiment_values = sentiment_features or {}
+    for col in SENTIMENT_FEATURE_COLS:
+        row[col] = float(sentiment_values.get(col, 0.0))
+
+    ordered_row = {col: row[col] for col in FEATURE_COLS}
+    return pd.DataFrame([ordered_row], columns=FEATURE_COLS)
 
 
 def _compute_price_features(

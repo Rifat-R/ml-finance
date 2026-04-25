@@ -1,16 +1,30 @@
 import os
+from datetime import date, timedelta
+
 import joblib
 import pandas as pd
 import yfinance as yf
 from fastapi import APIRouter, HTTPException
+from newsapi import NewsApiClient
 from pydantic import BaseModel, Field
 
-from ..features import FEATURE_COLS, build_features_from_closes
+from ..features import (
+    FEATURE_COLS,
+    SENTIMENT_FEATURE_COLS,
+    build_features_from_closes,
+)
 
 from ..training import MODEL_DIR, train_model_for_ticker
 
 
 router = APIRouter()
+
+NEWS_LOOKBACK_DAYS = 1
+SENTIMENT_BATCH_SIZE = 16
+
+_news_api_client: NewsApiClient | None = None
+_news_client_unavailable = False
+_sentiment_pipeline = None
 
 
 class TickerRequest(BaseModel):
@@ -21,8 +35,8 @@ class TickerRequest(BaseModel):
     )
     window: int = Field(
         30,
-        description="Number of most recent daily closes to use (must be >= 11).",
-        ge=11,
+        description="Number of most recent daily closes to use (must be >= 21).",
+        ge=21,
         le=300,
     )
 
@@ -38,6 +52,7 @@ class PredictionData(PredictionResponse):
     closes_used: list[float]
     accuracy: float
     overfitting_val: float
+    sentiment_features: dict[str, float]
 
 
 class BacktestPoint(BaseModel):
@@ -87,11 +102,148 @@ class TickerInfoResponse(BaseModel):
     summary: str | None = None
 
 
-def _predict_from_features(closes: list[float], model_obj) -> PredictionResponse:
+def _zero_sentiment_features() -> dict[str, float]:
+    return {col: 0.0 for col in SENTIMENT_FEATURE_COLS}
+
+
+def _get_news_api_client() -> NewsApiClient | None:
+    global _news_api_client
+
+    api_key = os.getenv("NEWS_API_KEY")
+    if not api_key:
+        raise HTTPException(
+            status_code=503,
+            detail="News API key not configured. Set the NEWS_API_KEY environment variable to enable live sentiment features.",
+        )
+
+    _news_api_client = NewsApiClient(api_key=api_key)
+    return _news_api_client
+
+
+def _get_sentiment_pipeline():
+    global _sentiment_pipeline
+
+    if _sentiment_pipeline is None:
+        from transformers import pipeline
+
+        _sentiment_pipeline = pipeline(
+            "text-classification",
+            model="ProsusAI/finbert",
+            tokenizer="ProsusAI/finbert",
+        )
+
+    return _sentiment_pipeline
+
+
+def _label_score(result: dict[str, object]) -> float:
+    label = str(result.get("label", "")).lower()
+    score = float(result.get("score", 0.0))  # type: ignore
+
+    if label == "positive":
+        return score
+    if label == "negative":
+        return -score
+    return 0.0
+
+
+def extract_article_titles(response: dict[str, object]) -> list[str]:
+    articles = response.get("articles")
+
+    titles: list[str] = []
+    for article in articles:
+        title = article.get("title")
+        title.append(title)
+
+    return titles
+
+
+def _build_live_sentiment_features(ticker: str) -> dict[str, float]:
+    client = _get_news_api_client()
+    if client is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Failed to initialize News API client",
+        )
+
+    start_date = (date.today() - timedelta(days=NEWS_LOOKBACK_DAYS)).isoformat()
+
     try:
-        X = build_features_from_closes(closes)
+        response = client.get_everything(
+            q=ticker.strip().upper(),
+            from_param=start_date,
+            language="en",
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=502,
+            detail="Failed to fetch news articles for sentiment analysis",
+        )
+
+    titles = extract_article_titles(response)
+    if not titles:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No news articles found for '{ticker}' in the last {NEWS_LOOKBACK_DAYS} days.",
+        )
+
+    classifier = _get_sentiment_pipeline()
+    results: list[dict[str, object]] = []
+    for i in range(0, len(titles), SENTIMENT_BATCH_SIZE):
+        batch_texts = titles[i : i + SENTIMENT_BATCH_SIZE]
+        batch_results = classifier(
+            batch_texts,
+            truncation=True,
+            max_length=256,
+        )
+        if isinstance(batch_results, list):
+            results.extend(r for r in batch_results if isinstance(r, dict))
+
+    if not results:
+        raise HTTPException(
+            status_code=502,
+            detail="Sentiment analysis failed to produce results",
+        )
+
+    sentiments = [_label_score(result) for result in results]
+    article_count = float(len(sentiments))
+    sum_sentiment = float(sum(sentiments))
+    mean_sentiment = sum_sentiment / article_count
+    positive_ratio = float(sum(1 for s in sentiments if s > 0.0) / article_count)
+
+    return {
+        "mean_sentiment": mean_sentiment,
+        "article_count": article_count,
+        "sum_sentiment": sum_sentiment,
+        "positive_ratio": positive_ratio,
+    }
+
+
+def _get_expected_feature_cols(value: object) -> list[str] | None:
+    if not isinstance(value, list):
+        return None
+    if not all(isinstance(col, str) for col in value):
+        return None
+    return value
+
+
+def _predict_from_features(
+    ticker: str,
+    closes: list[float],
+    model_obj,
+    expected_feature_cols: list[str] | None = None,
+) -> tuple[PredictionResponse, dict[str, float]]:
+    sentiment_features = _build_live_sentiment_features(ticker)
+
+    try:
+        X = build_features_from_closes(closes, sentiment_features=sentiment_features)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+    if expected_feature_cols:
+        missing_cols = [col for col in expected_feature_cols if col not in X.columns]
+        for col in missing_cols:
+            X[col] = 0.0
+        X = X[expected_feature_cols]
 
     proba = model_obj.predict_proba(X)[0]
 
@@ -99,7 +251,10 @@ def _predict_from_features(closes: list[float], model_obj) -> PredictionResponse
     prob_up = float(proba[1])
     direction = "up" if prob_up >= 0.5 else "down"
 
-    return PredictionResponse(direction=direction, prob_up=prob_up, prob_down=prob_down)
+    return (
+        PredictionResponse(direction=direction, prob_up=prob_up, prob_down=prob_down),
+        sentiment_features,
+    )
 
 
 def fetch_latest_closes(ticker: str, window: int) -> list[float]:
@@ -251,9 +406,12 @@ def predict_direction_from_ticker(request: TickerRequest):
     """
     closes = fetch_latest_closes(request.ticker, window=request.window)
     model_entry = load_or_train_model(request.ticker)
-    base_prediction = _predict_from_features(
+    expected_feature_cols = _get_expected_feature_cols(model_entry.get("feature_cols"))
+    base_prediction, sentiment_features = _predict_from_features(
+        request.ticker,
         closes,
         model_entry["model"],
+        expected_feature_cols=expected_feature_cols,
     )
 
     accuracy = model_entry.get("accuracy", 0.0)
@@ -266,5 +424,6 @@ def predict_direction_from_ticker(request: TickerRequest):
         closes_used=closes,
         accuracy=accuracy,  # type: ignore
         overfitting_val=overfitting_val,  # type: ignore
+        sentiment_features=sentiment_features,
         **base_prediction.model_dump(),
     )
