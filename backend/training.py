@@ -172,6 +172,25 @@ def walk_forward_year_backtest(
         raise ValueError("Dataframe must include 'next_return' for backtesting.")
 
     df = df.sort_index()
+    if df.empty:
+        raise HTTPException(
+            status_code=500, detail="No rows available for backtesting."
+        )
+
+    min_year = int(df.index.min().year)
+    max_year = int(df.index.max().year)
+    effective_start_year = max(start_year, min_year + 1)
+    effective_end_year = min(end_year, max_year)
+
+    if effective_start_year > effective_end_year:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Not enough yearly history for backtest. "
+                f"Data spans {min_year}-{max_year}; need at least two calendar years."
+            ),
+        )
+
     next_dates = df.index.to_series().shift(-1)
     df = df.assign(next_date=next_dates)
 
@@ -182,7 +201,7 @@ def walk_forward_year_backtest(
     overall_buy_hold_returns: list[float] = []
     years: list[dict[str, object]] = []
 
-    for year in range(start_year, end_year + 1):
+    for year in range(effective_start_year, effective_end_year + 1):
         train_mask = df.index.year < year
         test_mask = (df.index.year == year) & (df["next_date"].dt.year == year)
 
@@ -190,10 +209,7 @@ def walk_forward_year_backtest(
             continue
 
         if not train_mask.any():
-            raise HTTPException(
-                status_code=500,
-                detail=f"Not enough data to train before {year}.",
-            )
+            continue
 
         X_train = df.loc[train_mask, FEATURE_COLS]
         y_train = df.loc[train_mask, "target"]
@@ -262,7 +278,12 @@ def walk_forward_year_backtest(
         )
 
     if not years:
-        raise HTTPException(status_code=500, detail="No backtest years available.")
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "No backtest years available after aligning to available data range."
+            ),
+        )
 
     overall_model_sharpe = _compute_annualized_sharpe(np.array(overall_model_returns))
     overall_buy_hold_sharpe = _compute_annualized_sharpe(
@@ -270,8 +291,8 @@ def walk_forward_year_backtest(
     )
 
     return {
-        "start_year": start_year,
-        "end_year": end_year,
+        "start_year": effective_start_year,
+        "end_year": effective_end_year,
         "overall": {
             "model_return": float(model_value - 1.0),
             "buy_hold_return": float(buy_hold_value - 1.0),
@@ -310,7 +331,7 @@ def train_model_for_ticker(ticker: str) -> dict[str, object]:
         test_size=test_size,
     )
 
-    year_backtest = walk_forward_year_backtest(df, start_year=2018)
+    year_backtest = walk_forward_year_backtest(df)
 
     print(
         f"WALK-FORWARD AVG TRAIN ACCURACY: {wf['avg_train_acc']:.4f}, "

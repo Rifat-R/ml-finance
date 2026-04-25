@@ -10,7 +10,6 @@ from pydantic import BaseModel, Field
 
 from ..features import (
     FEATURE_COLS,
-    SENTIMENT_FEATURE_COLS,
     build_features_from_closes,
 )
 
@@ -19,11 +18,10 @@ from ..training import MODEL_DIR, train_model_for_ticker
 
 router = APIRouter()
 
-NEWS_LOOKBACK_DAYS = 1
+NEWS_LOOKBACK_DAYS = 3
 SENTIMENT_BATCH_SIZE = 16
 
 _news_api_client: NewsApiClient | None = None
-_news_client_unavailable = False
 _sentiment_pipeline = None
 
 
@@ -102,12 +100,11 @@ class TickerInfoResponse(BaseModel):
     summary: str | None = None
 
 
-def _zero_sentiment_features() -> dict[str, float]:
-    return {col: 0.0 for col in SENTIMENT_FEATURE_COLS}
-
-
-def _get_news_api_client() -> NewsApiClient | None:
+def _get_news_api_client() -> NewsApiClient:
     global _news_api_client
+
+    if _news_api_client is not None:
+        return _news_api_client
 
     api_key = os.getenv("NEWS_API_KEY")
     if not api_key:
@@ -147,23 +144,22 @@ def _label_score(result: dict[str, object]) -> float:
 
 
 def extract_article_titles(response: dict[str, object]) -> list[str]:
-    articles = response.get("articles")
+    articles = response.get("articles", [])
 
     titles: list[str] = []
     for article in articles:
+        if not isinstance(article, dict):
+            continue
+
         title = article.get("title")
-        title.append(title)
+        if isinstance(title, str) and title.strip():
+            titles.append(title)
 
     return titles
 
 
 def _build_live_sentiment_features(ticker: str) -> dict[str, float]:
     client = _get_news_api_client()
-    if client is None:
-        raise HTTPException(
-            status_code=503,
-            detail="Failed to initialize News API client",
-        )
 
     start_date = (date.today() - timedelta(days=NEWS_LOOKBACK_DAYS)).isoformat()
 
@@ -298,17 +294,17 @@ def fetch_latest_closes(ticker: str, window: int) -> list[float]:
     return closes[-window:]
 
 
-def load_or_train_model(
-    ticker: str, *, require_backtest: bool = False
-) -> dict[str, object]:
+def load_or_train_model(ticker: str) -> dict[str, object]:
     key = ticker.upper()
 
     disk_path = os.path.join(MODEL_DIR, f"lgbm_direction_{key}.pkl")
     if os.path.exists(disk_path):
         try:
             artifact_local = joblib.load(disk_path)
-            if require_backtest and "walk_forward_overall" not in artifact_local:
-                raise ValueError("Missing walk-forward backtest in artifact")
+            if not artifact_local.get("walk_forward_overall"):
+                raise ValueError("Missing walk-forward overall backtest in artifact")
+            if not artifact_local.get("walk_forward_years"):
+                raise ValueError("Missing walk-forward yearly backtest in artifact")
             return artifact_local
         except Exception:
             # Fall back to retraining if loading fails
@@ -331,7 +327,7 @@ def backtest_walk_forward(ticker: str):
     if not ticker or not ticker.strip():
         raise HTTPException(status_code=400, detail="Ticker symbol is required.")
 
-    model_entry = load_or_train_model(ticker, require_backtest=True)
+    model_entry = load_or_train_model(ticker)
 
     overall = model_entry.get("walk_forward_overall")
     years = model_entry.get("walk_forward_years")
