@@ -118,13 +118,32 @@ PRICE_FEATURE_COLS: list[str] = [f.name for f in FEATURES]
 FEATURE_COLS = SENTIMENT_FEATURE_COLS + PRICE_FEATURE_COLS
 
 
+def _normalize_index_to_date(index: pd.Index) -> pd.DatetimeIndex:
+    dt_index = pd.DatetimeIndex(pd.to_datetime(index))
+    if dt_index.tz is not None:
+        dt_index = dt_index.tz_convert(None)
+    return dt_index.normalize()
+
+
 def build_feature_frame(ticker: str) -> pd.DataFrame:
-    base_df = _build_base_frame(ticker)
-    sentiment_df = _build_sentiment_feature_frame(ticker)
+    base_df = _build_base_frame(ticker).copy()
+    sentiment_df = _build_sentiment_feature_frame(ticker).copy()
+
+    if sentiment_df.empty:
+        raise ValueError(f"No sentiment rows found for ticker '{ticker}'.")
+
+    base_df.index = _normalize_index_to_date(base_df.index)
+    sentiment_df.index = _normalize_index_to_date(sentiment_df.index)
 
     start = sentiment_df.index.min()
     end = sentiment_df.index.max()
     base_df = base_df.loc[(base_df.index >= start) & (base_df.index <= end)]
+
+    if base_df.empty:
+        raise ValueError(
+            f"No stock rows for ticker '{ticker}' inside sentiment date range."
+        )
+
     merged_df = base_df.join(sentiment_df, how="left")
     merged_df[SENTIMENT_FEATURE_COLS] = merged_df[SENTIMENT_FEATURE_COLS].shift(1)
     merged_df[SENTIMENT_FEATURE_COLS] = merged_df[SENTIMENT_FEATURE_COLS].fillna(0)
@@ -182,7 +201,7 @@ def _build_price_feature_frame(df: pd.DataFrame) -> pd.DataFrame:
 def _build_sentiment_feature_frame(ticker: str) -> pd.DataFrame:
     news_features_df = pd.read_parquet(NEWS_FEATURES_PATH)
     df = (
-        news_features_df[news_features_df["ticker"] == ticker]
+        news_features_df[news_features_df["ticker"] == ticker.upper()]
         .drop(columns=["ticker"])
         .copy()
     )
