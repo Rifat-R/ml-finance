@@ -1,7 +1,6 @@
 import os
 from typing import TypedDict
 import joblib
-from datetime import date
 import numpy as np
 import pandas as pd
 
@@ -162,12 +161,10 @@ def walk_forward_evaluate(
 def walk_forward_year_backtest(
     df: pd.DataFrame,
     *,
-    start_year: int = 2018,
-    end_year: int | None = None,
+    train_start_year: int = 2020,
+    start_year: int = 2023,
+    end_year: int = 2023,
 ) -> dict[str, object]:
-    if end_year is None:
-        end_year = date.today().year
-
     if not isinstance(df.index, pd.DatetimeIndex):
         df = df.copy()
         df.index = pd.to_datetime(df.index)
@@ -183,15 +180,26 @@ def walk_forward_year_backtest(
 
     min_year = int(df.index.min().year)
     max_year = int(df.index.max().year)
-    effective_start_year = max(start_year, min_year + 1)
-    effective_end_year = min(end_year, max_year)
+
+    if min_year > train_start_year or max_year < end_year:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Not enough yearly history for backtest. "
+                f"Need data from {train_start_year} to {end_year}, "
+                f"but got {min_year} to {max_year}."
+            ),
+        )
+
+    effective_start_year = start_year
+    effective_end_year = end_year
 
     if effective_start_year > effective_end_year:
         raise HTTPException(
             status_code=500,
             detail=(
-                "Not enough yearly history for backtest. "
-                f"Data spans {min_year}-{max_year}; need at least two calendar years."
+                "Invalid yearly backtest range. "
+                f"start_year={effective_start_year}, end_year={effective_end_year}."
             ),
         )
 
@@ -206,7 +214,7 @@ def walk_forward_year_backtest(
     years: list[dict[str, object]] = []
 
     for year in range(effective_start_year, effective_end_year + 1):
-        train_mask = df.index.year < year
+        train_mask = (df.index.year >= train_start_year) & (df.index.year < year)
         test_mask = (df.index.year == year) & (df["next_date"].dt.year == year)
 
         if not test_mask.any():
@@ -335,7 +343,12 @@ def train_model_for_ticker(ticker: str) -> dict[str, object]:
         test_size=test_size,
     )
 
-    year_backtest = walk_forward_year_backtest(df)
+    year_backtest = walk_forward_year_backtest(
+        df,
+        train_start_year=2020,
+        start_year=2023,
+        end_year=2023,
+    )
 
     print(
         f"WALK-FORWARD AVG TRAIN ACCURACY: {wf['avg_train_acc']:.4f}, "

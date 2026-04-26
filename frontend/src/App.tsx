@@ -1,5 +1,5 @@
 import type { FormEvent } from 'react'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Line,
   LineChart,
@@ -66,6 +66,21 @@ type ProgressBarProps = {
 
 const clamp01 = (value: number) => Math.min(1, Math.max(0, value))
 
+const weekKeyFromDate = (dateStr: string) => {
+  const date = new Date(`${dateStr}T00:00:00Z`)
+  const dayOffset = (date.getUTCDay() + 6) % 7
+  date.setUTCDate(date.getUTCDate() - dayOffset)
+  return date.toISOString().slice(0, 10)
+}
+
+const downsampleWeeklyCurve = (curve: BacktestPoint[]) => {
+  const weeklyLastPoint = new Map<string, BacktestPoint>()
+  for (const point of curve) {
+    weeklyLastPoint.set(weekKeyFromDate(point.date), point)
+  }
+  return Array.from(weeklyLastPoint.values())
+}
+
 const ProgressBar = ({ label, value, gradient, delay = 0 }: ProgressBarProps) => {
   const [displayValue, setDisplayValue] = useState(0)
 
@@ -108,6 +123,12 @@ function App() {
   const [backtest, setBacktest] = useState<BacktestResponse | null>(null)
   const [isLoadingBacktest, setIsLoadingBacktest] = useState<boolean>(false)
   const [backtestError, setBacktestError] = useState<string | null>(null)
+  const weeklyBacktestCurve = useMemo(() => {
+    if (!backtest) {
+      return []
+    }
+    return downsampleWeeklyCurve(backtest.overall.curve)
+  }, [backtest])
 
   const fetchPredictorInfo = async () => {
     setIsLoadingInfo(true)
@@ -375,7 +396,7 @@ function App() {
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Walk-forward backtest</p>
-              <h2 className="text-xl font-semibold text-slate-50">Model vs Buy &amp; Hold (2018-present)</h2>
+              <h2 className="text-xl font-semibold text-slate-50">Model vs Buy &amp; Hold (2023, weekly view)</h2>
             </div>
             {backtest && (
               <span className="text-sm text-slate-400">
@@ -419,7 +440,7 @@ function App() {
 
               <div className="h-72 w-full rounded-xl border border-white/10 bg-slate-950/50 px-3 py-4">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={backtest.overall.curve} margin={{ top: 8, right: 18, left: 0, bottom: 0 }}>
+                  <LineChart data={weeklyBacktestCurve} margin={{ top: 8, right: 18, left: 0, bottom: 0 }}>
                     <XAxis
                       dataKey="date"
                       tickFormatter={(value) => String(value).slice(0, 4)}

@@ -20,6 +20,8 @@ router = APIRouter()
 
 NEWS_LOOKBACK_DAYS = 3
 SENTIMENT_BATCH_SIZE = 16
+BACKTEST_START_YEAR = 2023
+BACKTEST_END_YEAR = 2023
 
 _news_api_client: NewsApiClient | None = None
 _sentiment_pipeline = None
@@ -307,6 +309,10 @@ def load_or_train_model(ticker: str) -> dict[str, object]:
                 raise ValueError("Missing walk-forward overall backtest in artifact")
             if not artifact_local.get("walk_forward_years"):
                 raise ValueError("Missing walk-forward yearly backtest in artifact")
+            if artifact_local.get("walk_forward_start_year") != BACKTEST_START_YEAR:
+                raise ValueError("Backtest start year mismatch in artifact")
+            if artifact_local.get("walk_forward_end_year") != BACKTEST_END_YEAR:
+                raise ValueError("Backtest end year mismatch in artifact")
             if "worst_overfitting_val" not in artifact_local:
                 raise ValueError("Missing worst overfitting metric in artifact")
             if "overfitting_std" not in artifact_local:
