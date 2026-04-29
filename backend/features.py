@@ -118,6 +118,12 @@ PRICE_FEATURE_COLS: list[str] = [f.name for f in FEATURES]
 FEATURE_COLS = SENTIMENT_FEATURE_COLS + PRICE_FEATURE_COLS
 
 
+def get_feature_cols(use_sentiment: bool) -> list[str]:
+    if use_sentiment:
+        return SENTIMENT_FEATURE_COLS + PRICE_FEATURE_COLS
+    return list(PRICE_FEATURE_COLS)
+
+
 def _normalize_index_to_date(index: pd.Index) -> pd.DatetimeIndex:
     dt_index = pd.DatetimeIndex(pd.to_datetime(index))
     if dt_index.tz is not None:
@@ -125,19 +131,25 @@ def _normalize_index_to_date(index: pd.Index) -> pd.DatetimeIndex:
     return dt_index.normalize()
 
 
-def build_feature_frame(ticker: str) -> pd.DataFrame:
-    base_df = _build_base_frame(ticker).copy()
+def build_feature_frame(
+    ticker: str, *, use_sentiment: bool = True, start: str | None = None
+) -> pd.DataFrame:
+    base_df = _build_base_frame(ticker, start=start).copy()
+    base_df.index = _normalize_index_to_date(base_df.index)
+
+    if not use_sentiment:
+        return base_df
+
     sentiment_df = _build_sentiment_feature_frame(ticker).copy()
 
     if sentiment_df.empty:
         raise ValueError(f"No sentiment rows found for ticker '{ticker}'.")
 
-    base_df.index = _normalize_index_to_date(base_df.index)
     sentiment_df.index = _normalize_index_to_date(sentiment_df.index)
 
-    start = sentiment_df.index.min()
-    end = sentiment_df.index.max()
-    base_df = base_df.loc[(base_df.index >= start) & (base_df.index <= end)]
+    start_idx = sentiment_df.index.min()
+    end_idx = sentiment_df.index.max()
+    base_df = base_df.loc[(base_df.index >= start_idx) & (base_df.index <= end_idx)]
 
     if base_df.empty:
         raise ValueError(
@@ -152,7 +164,10 @@ def build_feature_frame(ticker: str) -> pd.DataFrame:
 
 
 def build_features_from_closes(
-    closes: Sequence[float], sentiment_features: dict[str, float] | None = None
+    closes: Sequence[float],
+    sentiment_features: dict[str, float] | None = None,
+    *,
+    use_sentiment: bool = True,
 ) -> pd.DataFrame:
     closes_arr = np.asarray(closes, dtype=float)
     closes_series = pd.Series(closes_arr)
@@ -165,14 +180,18 @@ def build_features_from_closes(
 
     returns = closes_series.pct_change()
 
-    row = {f.name: f.compute_last(returns, closes_series) for f in FEATURES}
+    row: dict[str, float] = {
+        f.name: f.compute_last(returns, closes_series) for f in FEATURES
+    }
 
-    sentiment_values = sentiment_features or {}
-    for col in SENTIMENT_FEATURE_COLS:
-        row[col] = float(sentiment_values.get(col, 0.0))
+    if use_sentiment:
+        sentiment_values = sentiment_features or {}
+        for col in SENTIMENT_FEATURE_COLS:
+            row[col] = float(sentiment_values.get(col, 0.0))
 
-    ordered_row = {col: row[col] for col in FEATURE_COLS}
-    return pd.DataFrame([ordered_row], columns=FEATURE_COLS)
+    cols = get_feature_cols(use_sentiment)
+    ordered_row = {col: row[col] for col in cols}
+    return pd.DataFrame([ordered_row], columns=cols)
 
 
 def _compute_price_features(
@@ -212,9 +231,12 @@ def _build_sentiment_feature_frame(ticker: str) -> pd.DataFrame:
     return df
 
 
-def _build_base_frame(ticker: str) -> pd.DataFrame:
+def _build_base_frame(ticker: str, *, start: str | None = None) -> pd.DataFrame:
     """Fetch stock data and compute price related features and target variable."""
-    df = fetch_stock_data(ticker)
+    if start is None:
+        df = fetch_stock_data(ticker)
+    else:
+        df = fetch_stock_data(ticker, start=start)
     df["return"] = df["adjClose"].pct_change()
     df["next_return"] = df["return"].shift(-1)
 

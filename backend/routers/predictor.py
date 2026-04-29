@@ -13,15 +13,19 @@ from ..features import (
     build_features_from_closes,
 )
 
-from ..training import MODEL_DIR, train_model_for_ticker
+from ..training import (
+    MODEL_DIR,
+    PRICE_ONLY_BACKTEST_START_YEAR,
+    SENTIMENT_BACKTEST_END_YEAR,
+    SENTIMENT_BACKTEST_START_YEAR,
+    train_model_for_ticker,
+)
 
 
 router = APIRouter()
 
 NEWS_LOOKBACK_DAYS = 3
 SENTIMENT_BATCH_SIZE = 16
-BACKTEST_START_YEAR = 2023
-BACKTEST_END_YEAR = 2023
 
 _news_api_client: NewsApiClient | None = None
 _sentiment_pipeline = None
@@ -39,6 +43,14 @@ class TickerRequest(BaseModel):
         ge=21,
         le=300,
     )
+    use_sentiment: bool = Field(
+        True,
+        description=(
+            "If true, train and predict using both price and live news sentiment "
+            "features (recent date range). If false, use price-only features over "
+            "a longer history."
+        ),
+    )
 
 
 class PredictionResponse(BaseModel):
@@ -54,7 +66,8 @@ class PredictionData(PredictionResponse):
     overfitting_val: float
     worst_overfitting_val: float | None = None
     overfitting_std: float | None = None
-    sentiment_features: dict[str, float]
+    use_sentiment: bool
+    sentiment_features: dict[str, float] | None = None
 
 
 class BacktestPoint(BaseModel):
@@ -230,12 +243,20 @@ def _predict_from_features(
     ticker: str,
     closes: list[float],
     model_obj,
+    *,
+    use_sentiment: bool,
     expected_feature_cols: list[str] | None = None,
-) -> tuple[PredictionResponse, dict[str, float]]:
-    sentiment_features = _build_live_sentiment_features(ticker)
+) -> tuple[PredictionResponse, dict[str, float] | None]:
+    sentiment_features: dict[str, float] | None = None
+    if use_sentiment:
+        sentiment_features = _build_live_sentiment_features(ticker)
 
     try:
-        X = build_features_from_closes(closes, sentiment_features=sentiment_features)
+        X = build_features_from_closes(
+            closes,
+            sentiment_features=sentiment_features,
+            use_sentiment=use_sentiment,
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -298,10 +319,23 @@ def fetch_latest_closes(ticker: str, window: int) -> list[float]:
     return closes[-window:]
 
 
-def load_or_train_model(ticker: str) -> dict[str, object]:
+def load_or_train_model(
+    ticker: str, *, use_sentiment: bool = True
+) -> dict[str, object]:
     key = ticker.upper()
 
-    disk_path = os.path.join(MODEL_DIR, f"lgbm_direction_{key}.pkl")
+    suffix = "" if use_sentiment else "_price_only"
+    disk_path = os.path.join(MODEL_DIR, f"lgbm_direction_{key}{suffix}.pkl")
+
+    expected_start_year = (
+        SENTIMENT_BACKTEST_START_YEAR
+        if use_sentiment
+        else PRICE_ONLY_BACKTEST_START_YEAR
+    )
+    expected_end_year = (
+        SENTIMENT_BACKTEST_END_YEAR if use_sentiment else None
+    )
+
     if os.path.exists(disk_path):
         try:
             artifact_local = joblib.load(disk_path)
@@ -309,21 +343,24 @@ def load_or_train_model(ticker: str) -> dict[str, object]:
                 raise ValueError("Missing walk-forward overall backtest in artifact")
             if not artifact_local.get("walk_forward_years"):
                 raise ValueError("Missing walk-forward yearly backtest in artifact")
-            if artifact_local.get("walk_forward_start_year") != BACKTEST_START_YEAR:
+            if artifact_local.get("walk_forward_start_year") != expected_start_year:
                 raise ValueError("Backtest start year mismatch in artifact")
-            if artifact_local.get("walk_forward_end_year") != BACKTEST_END_YEAR:
+            if (
+                expected_end_year is not None
+                and artifact_local.get("walk_forward_end_year") != expected_end_year
+            ):
                 raise ValueError("Backtest end year mismatch in artifact")
+            if artifact_local.get("use_sentiment") != use_sentiment:
+                raise ValueError("Sentiment mode mismatch in artifact")
             if "worst_overfitting_val" not in artifact_local:
                 raise ValueError("Missing worst overfitting metric in artifact")
             if "overfitting_std" not in artifact_local:
                 raise ValueError("Missing overfitting std metric in artifact")
             return artifact_local
         except Exception:
-            # Fall back to retraining if loading fails
             pass
 
-    # Big API request to tiingo
-    artifact_local = train_model_for_ticker(ticker)
+    artifact_local = train_model_for_ticker(ticker, use_sentiment=use_sentiment)
     return artifact_local
 
 
@@ -335,11 +372,11 @@ def predict_info():
 
 
 @router.get("/backtest-walk-forward", response_model=BacktestResponse)
-def backtest_walk_forward(ticker: str):
+def backtest_walk_forward(ticker: str, use_sentiment: bool = True):
     if not ticker or not ticker.strip():
         raise HTTPException(status_code=400, detail="Ticker symbol is required.")
 
-    model_entry = load_or_train_model(ticker)
+    model_entry = load_or_train_model(ticker, use_sentiment=use_sentiment)
 
     overall = model_entry.get("walk_forward_overall")
     years = model_entry.get("walk_forward_years")
@@ -413,12 +450,15 @@ def predict_direction_from_ticker(request: TickerRequest):
     Fetch the latest closes for a ticker with yfinance and run the predictor.
     """
     closes = fetch_latest_closes(request.ticker, window=request.window)
-    model_entry = load_or_train_model(request.ticker)
+    model_entry = load_or_train_model(
+        request.ticker, use_sentiment=request.use_sentiment
+    )
     expected_feature_cols = _get_expected_feature_cols(model_entry.get("feature_cols"))
     base_prediction, sentiment_features = _predict_from_features(
         request.ticker,
         closes,
         model_entry["model"],
+        use_sentiment=request.use_sentiment,
         expected_feature_cols=expected_feature_cols,
     )
 
@@ -436,6 +476,7 @@ def predict_direction_from_ticker(request: TickerRequest):
         overfitting_val=overfitting_val,  # type: ignore
         worst_overfitting_val=worst_overfitting_val,  # type: ignore
         overfitting_std=overfitting_std,  # type: ignore
+        use_sentiment=request.use_sentiment,
         sentiment_features=sentiment_features,
         **base_prediction.model_dump(),
     )

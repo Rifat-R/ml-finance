@@ -8,11 +8,22 @@ from fastapi import HTTPException
 from lightgbm import LGBMClassifier
 from sklearn.metrics import accuracy_score
 
-from .features import FEATURE_COLS, build_feature_frame
+from .features import build_feature_frame, get_feature_cols
 
 
 MODEL_DIR = "models"
 TRADING_DAYS_PER_YEAR = 252
+
+# Sentiment-enabled training window (limited by news data ~2020+)
+SENTIMENT_TRAIN_START_YEAR = 2020
+SENTIMENT_BACKTEST_START_YEAR = 2023
+SENTIMENT_BACKTEST_END_YEAR = 2023
+SENTIMENT_DATA_START = "2020-01-01"
+
+# Price-only training window (much longer history available)
+PRICE_ONLY_TRAIN_START_YEAR = 2015
+PRICE_ONLY_BACKTEST_START_YEAR = 2018
+PRICE_ONLY_DATA_START = "2015-01-01"
 
 
 def _compute_annualized_sharpe(
@@ -161,6 +172,7 @@ def walk_forward_evaluate(
 def walk_forward_year_backtest(
     df: pd.DataFrame,
     *,
+    feature_cols: list[str],
     train_start_year: int = 2020,
     start_year: int = 2023,
     end_year: int = 2023,
@@ -223,9 +235,9 @@ def walk_forward_year_backtest(
         if not train_mask.any():
             continue
 
-        X_train = df.loc[train_mask, FEATURE_COLS]
+        X_train = df.loc[train_mask, feature_cols]
         y_train = df.loc[train_mask, "target"]
-        X_test = df.loc[test_mask, FEATURE_COLS]
+        X_test = df.loc[test_mask, feature_cols]
         y_test = df.loc[test_mask, "target"]
         next_returns = df.loc[test_mask, "next_return"]
 
@@ -316,17 +328,31 @@ def walk_forward_year_backtest(
     }
 
 
-def train_model_for_ticker(ticker: str) -> dict[str, object]:
+def train_model_for_ticker(
+    ticker: str, *, use_sentiment: bool = True
+) -> dict[str, object]:
     """
     Train a LightGBM model for the given ticker and evaluate it with walk-forward validation.
     Also fits one final model on all available data for later inference.
     """
-    df = build_feature_frame(ticker)
+    feature_cols = get_feature_cols(use_sentiment)
 
-    X = df.loc[:, FEATURE_COLS].copy()
+    if use_sentiment:
+        data_start = SENTIMENT_DATA_START
+        train_start_year = SENTIMENT_TRAIN_START_YEAR
+        backtest_start_year = SENTIMENT_BACKTEST_START_YEAR
+        backtest_end_year = SENTIMENT_BACKTEST_END_YEAR
+    else:
+        data_start = PRICE_ONLY_DATA_START
+        train_start_year = PRICE_ONLY_TRAIN_START_YEAR
+        backtest_start_year = PRICE_ONLY_BACKTEST_START_YEAR
+        backtest_end_year = pd.Timestamp.today().year - 1
+
+    df = build_feature_frame(ticker, use_sentiment=use_sentiment, start=data_start)
+
+    X = df.loc[:, feature_cols].copy()
     y = df["target"].copy()
 
-    # Example: first 60% train, then evaluate in 4, 10% chunks
     n = len(df)
     initial_train_size = int(n * 0.6)
     test_size = int(n * 0.1)
@@ -345,9 +371,10 @@ def train_model_for_ticker(ticker: str) -> dict[str, object]:
 
     year_backtest = walk_forward_year_backtest(
         df,
-        train_start_year=2020,
-        start_year=2023,
-        end_year=2023,
+        feature_cols=feature_cols,
+        train_start_year=train_start_year,
+        start_year=backtest_start_year,
+        end_year=backtest_end_year,
     )
 
     print(
@@ -372,7 +399,8 @@ def train_model_for_ticker(ticker: str) -> dict[str, object]:
 
     artifact_local = {
         "model": final_model,
-        "feature_cols": FEATURE_COLS,
+        "feature_cols": feature_cols,
+        "use_sentiment": use_sentiment,
         "ticker": ticker,
         "accuracy": wf["avg_test_acc"],
         "overfitting_val": wf["avg_overfitting_val"],
@@ -391,7 +419,10 @@ def train_model_for_ticker(ticker: str) -> dict[str, object]:
     }
 
     os.makedirs(MODEL_DIR, exist_ok=True)
-    model_path = os.path.join(MODEL_DIR, f"lgbm_direction_{ticker.upper()}.pkl")
+    suffix = "" if use_sentiment else "_price_only"
+    model_path = os.path.join(
+        MODEL_DIR, f"lgbm_direction_{ticker.upper()}{suffix}.pkl"
+    )
     joblib.dump(artifact_local, model_path)
 
     return artifact_local

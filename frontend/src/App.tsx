@@ -21,6 +21,7 @@ type Prediction = {
   closes_used?: number[]
   accuracy: number
   overfitting_val?: number
+  use_sentiment?: boolean
 }
 
 type TickerInfo = {
@@ -111,6 +112,7 @@ function App() {
   const apiBase = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000'
 
   const [tickerInput, setTickerInput] = useState<string>('AAPL')
+  const [useSentiment, setUseSentiment] = useState<boolean>(true)
   const [info, setInfo] = useState<PredictorInfo | null>(null)
   const [infoError, setInfoError] = useState<string | null>(null)
   const [prediction, setPrediction] = useState<Prediction | null>(null)
@@ -175,11 +177,13 @@ function App() {
     }
   }
 
-  const fetchBacktest = async (symbol: string) => {
+  const fetchBacktest = async (symbol: string, sentimentOn: boolean) => {
     setIsLoadingBacktest(true)
     setBacktestError(null)
     try {
-      const response = await fetch(`${apiBase}/backtest-walk-forward?ticker=${encodeURIComponent(symbol)}`)
+      const response = await fetch(
+        `${apiBase}/backtest-walk-forward?ticker=${encodeURIComponent(symbol)}&use_sentiment=${sentimentOn}`,
+      )
       if (!response.ok) {
         const detail = await response.json().catch(() => ({}))
         const message = typeof detail.detail === 'string' ? detail.detail : `Backend responded with ${response.status}`
@@ -219,7 +223,7 @@ function App() {
       setPrediction(data)
       const symbol = data.ticker ?? (payload.ticker as string)
       if (symbol) {
-        fetchBacktest(symbol)
+        fetchBacktest(symbol, Boolean(payload.use_sentiment))
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Prediction request failed'
@@ -238,7 +242,10 @@ function App() {
       return
     }
 
-    await requestPrediction('/predict-direction-from-ticker', { ticker })
+    await requestPrediction('/predict-direction-from-ticker', {
+      ticker,
+      use_sentiment: useSentiment,
+    })
   }
 
   return (
@@ -283,6 +290,24 @@ function App() {
                 className="w-full rounded-lg border border-white/10 bg-white/10 px-3 py-3 text-base text-slate-100 shadow-inner shadow-black/20 outline-none ring-1 ring-transparent transition focus:border-cyan-400/70 focus:ring-cyan-400/40"
               />
               <p className="text-sm text-slate-400">Uses the most recent daily closes (default 30-day window) via tiingo.</p>
+
+              <label className="mt-2 flex cursor-pointer items-start gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-3 transition hover:border-cyan-400/40">
+                <input
+                  type="checkbox"
+                  checked={useSentiment}
+                  onChange={(event) => setUseSentiment(event.target.checked)}
+                  className="mt-0.5 h-4 w-4 cursor-pointer accent-cyan-400"
+                />
+                <span className="flex flex-col text-sm">
+                  <span className="font-semibold text-slate-100">Use news sentiment features</span>
+                  <span className="text-xs text-slate-400">
+                    {useSentiment
+                      ? 'Combines price + FinBERT news sentiment. Trains on ~3y of data (2020+) where news is available.'
+                      : 'Price features only. Trains on ~10y of data (2015+) with a longer backtest.'}
+                  </span>
+                </span>
+              </label>
+
               {predictError && (
                 <div className="rounded-lg border border-rose-400/60 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">
                   {predictError}
@@ -396,7 +421,14 @@ function App() {
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Walk-forward backtest</p>
-              <h2 className="text-xl font-semibold text-slate-50">Model vs Buy &amp; Hold (2023, weekly view)</h2>
+              <h2 className="text-xl font-semibold text-slate-50">
+                Model vs Buy &amp; Hold
+                {backtest && (
+                  <span className="ml-2 text-base font-normal text-slate-400">
+                    ({backtest.start_year === backtest.end_year ? backtest.start_year : `${backtest.start_year}-${backtest.end_year}`}, weekly view)
+                  </span>
+                )}
+              </h2>
             </div>
             {backtest && (
               <span className="text-sm text-slate-400">
