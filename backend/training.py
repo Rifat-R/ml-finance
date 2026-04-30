@@ -420,9 +420,7 @@ def train_model_for_ticker(
 
     os.makedirs(MODEL_DIR, exist_ok=True)
     suffix = "" if use_sentiment else "_price_only"
-    model_path = os.path.join(
-        MODEL_DIR, f"lgbm_direction_{ticker.upper()}{suffix}.pkl"
-    )
+    model_path = os.path.join(MODEL_DIR, f"lgbm_direction_{ticker.upper()}{suffix}.pkl")
     joblib.dump(artifact_local, model_path)
 
     return artifact_local

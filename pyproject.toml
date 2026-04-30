@@ -53,5 +53,15 @@ reportUnusedImport = "warning"
 
 [dependency-groups]
 dev = [
+    "httpx>=0.28.1",
     "matplotlib>=3.10.8",
+    "pytest>=9.0.3",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
 ]
